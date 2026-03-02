@@ -2,12 +2,28 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * Handles image conversion to WebP / AVIF using GD or Imagick.
- * Features: EXIF stripping, max-dimension resize, backup before convert.
+ * Handles local image conversion to WebP / AVIF.
+ * Routes through remote server if enabled via WPIO_Remote.
+ * Features: EXIF stripping, smart resize (max-dimension or fixed-width), backup.
  */
 class WPIO_Converter {
 
+    /**
+     * Main entry: route to remote or local.
+     */
     public static function convert( $source_path, $format = 'webp', $quality = 82 ) {
+        if ( WPIO_Remote::is_enabled() ) {
+            $result = WPIO_Remote::convert( $source_path, $format, $quality );
+            if ( ! is_wp_error( $result ) ) return $result;
+            // Fallback to local on error
+        }
+        return self::convert_local( $source_path, $format, $quality );
+    }
+
+    /**
+     * Local conversion only (GD or Imagick).
+     */
+    public static function convert_local( $source_path, $format = 'webp', $quality = 82 ) {
         if ( ! file_exists( $source_path ) ) {
             return new WP_Error( 'file_not_found', 'Source image not found: ' . $source_path );
         }
@@ -15,14 +31,16 @@ class WPIO_Converter {
         $info      = pathinfo( $source_path );
         $dest_path = $info['dirname'] . '/' . $info['filename'] . '.' . $format;
 
-        if ( file_exists( $dest_path ) ) {
-            return $dest_path;
+        if ( file_exists( $dest_path ) ) return $dest_path;
+
+        $ext = strtolower( $info['extension'] );
+        if ( ! in_array( $ext, array( 'jpg', 'jpeg', 'png', 'gif' ) ) ) {
+            return new WP_Error( 'unsupported_type', 'Unsupported image type: ' . $ext );
         }
 
-        $ext     = strtolower( $info['extension'] );
-        $allowed = array( 'jpg', 'jpeg', 'png', 'gif' );
-        if ( ! in_array( $ext, $allowed ) ) {
-            return new WP_Error( 'unsupported_type', 'Unsupported image type: ' . $ext );
+        // Backup before converting
+        if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
+            WPIO_Backup::backup( $source_path );
         }
 
         if ( extension_loaded( 'imagick' ) ) {
@@ -31,7 +49,7 @@ class WPIO_Converter {
             return self::convert_gd( $source_path, $dest_path, $format, $quality );
         }
 
-        return new WP_Error( 'no_library', 'Neither GD nor Imagick is available on this server.' );
+        return new WP_Error( 'no_library', 'Neither GD nor Imagick is available.' );
     }
 
     private static function convert_gd( $src, $dest, $format, $quality ) {
@@ -45,10 +63,7 @@ class WPIO_Converter {
         }
         if ( ! $image ) return new WP_Error( 'gd_create_failed', 'GD could not open image.' );
 
-        // Resize if over max dimension
-        $image = self::maybe_resize_gd( $image );
-
-        // Strip EXIF (GD always strips by re-encoding)
+        $image  = self::maybe_resize_gd( $image );
         $result = false;
         if ( $format === 'webp' && function_exists( 'imagewebp' ) ) {
             $result = imagewebp( $image, $dest, $quality );
@@ -63,20 +78,20 @@ class WPIO_Converter {
     private static function convert_imagick( $src, $dest, $format, $quality ) {
         try {
             $im = new Imagick( $src );
+            if ( get_option( 'wpio_strip_exif', '1' ) === '1' ) $im->stripImage();
 
-            // Strip EXIF / metadata
-            if ( get_option( 'wpio_strip_exif', '1' ) === '1' ) {
-                $im->stripImage();
-            }
+            // Smart resize
+            $resize_mode = get_option( 'wpio_resize_mode', 'max_dimension' );
+            $max_dim     = (int) get_option( 'wpio_max_dimension', 0 );
+            $max_width   = (int) get_option( 'wpio_max_width', 0 );
+            $w = $im->getImageWidth();
+            $h = $im->getImageHeight();
 
-            // Resize if over max dimension
-            $max_dim = (int) get_option( 'wpio_max_dimension', 0 );
-            if ( $max_dim > 0 ) {
-                $w = $im->getImageWidth();
-                $h = $im->getImageHeight();
-                if ( $w > $max_dim || $h > $max_dim ) {
-                    $im->resizeImage( $max_dim, $max_dim, Imagick::FILTER_LANCZOS, 1, true );
-                }
+            if ( $resize_mode === 'max_dimension' && $max_dim > 0 && ( $w > $max_dim || $h > $max_dim ) ) {
+                $im->resizeImage( $max_dim, $max_dim, Imagick::FILTER_LANCZOS, 1, true );
+            } elseif ( $resize_mode === 'max_width' && $max_width > 0 && $w > $max_width ) {
+                $new_h = (int) round( $h * ( $max_width / $w ) );
+                $im->resizeImage( $max_width, $new_h, Imagick::FILTER_LANCZOS, 1, false );
             }
 
             $im->setImageCompressionQuality( $quality );
@@ -90,51 +105,48 @@ class WPIO_Converter {
         }
     }
 
-    /**
-     * Resize GD resource if over configured max dimension.
-     *
-     * @param resource $image
-     * @return resource
-     */
     private static function maybe_resize_gd( $image ) {
-        $max_dim = (int) get_option( 'wpio_max_dimension', 0 );
-        if ( $max_dim <= 0 ) return $image;
-
+        $resize_mode = get_option( 'wpio_resize_mode', 'max_dimension' );
+        $max_dim     = (int) get_option( 'wpio_max_dimension', 0 );
+        $max_width   = (int) get_option( 'wpio_max_width', 0 );
         $w = imagesx( $image );
         $h = imagesy( $image );
-        if ( $w <= $max_dim && $h <= $max_dim ) return $image;
 
-        $ratio  = min( $max_dim / $w, $max_dim / $h );
-        $new_w  = (int) round( $w * $ratio );
-        $new_h  = (int) round( $h * $ratio );
+        $new_w = $w; $new_h = $h;
+
+        if ( $resize_mode === 'max_dimension' && $max_dim > 0 && ( $w > $max_dim || $h > $max_dim ) ) {
+            $ratio = min( $max_dim / $w, $max_dim / $h );
+            $new_w = (int) round( $w * $ratio );
+            $new_h = (int) round( $h * $ratio );
+        } elseif ( $resize_mode === 'max_width' && $max_width > 0 && $w > $max_width ) {
+            $ratio = $max_width / $w;
+            $new_w = $max_width;
+            $new_h = (int) round( $h * $ratio );
+        }
+
+        if ( $new_w === $w && $new_h === $h ) return $image;
+
         $resized = imagecreatetruecolor( $new_w, $new_h );
+        // Preserve PNG transparency
+        imagealphablending( $resized, false );
+        imagesavealpha( $resized, true );
         imagecopyresampled( $resized, $image, 0, 0, 0, 0, $new_w, $new_h, $w, $h );
         imagedestroy( $image );
         return $resized;
     }
 
     /**
-     * Legacy batch convert (used by old bulk button and WP-CLI).
-     * For large libraries, prefer WPIO_Queue.
+     * Legacy batch (used by WP-CLI). For admin bulk, use WPIO_Queue.
      */
     public static function batch_convert( $format = 'webp', $quality = 82 ) {
-        $upload_dir = wp_upload_dir();
-        $base_dir   = $upload_dir['basedir'];
-        $iterator   = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator( $base_dir, RecursiveDirectoryIterator::SKIP_DOTS )
-        );
+        $files   = WPIO_Folder_Scanner::get_pending_images( $format );
         $results = array( 'success' => array(), 'skipped' => array(), 'error' => array() );
-        foreach ( $iterator as $file ) {
-            if ( $file->isDir() ) continue;
-            $path = $file->getPathname();
-            if ( strpos( $path, 'wpio-backups' ) !== false ) continue;
-            $ext = strtolower( $file->getExtension() );
-            if ( ! in_array( $ext, array( 'jpg', 'jpeg', 'png' ) ) ) continue;
+        foreach ( $files as $path ) {
             $result = self::convert( $path, $format, $quality );
             if ( is_wp_error( $result ) ) {
-                $results['error'][] = array( 'file' => $file->getFilename(), 'error' => $result->get_error_message() );
+                $results['error'][] = array( 'file' => basename( $path ), 'error' => $result->get_error_message() );
             } else {
-                $results['success'][] = $file->getFilename();
+                $results['success'][] = basename( $path );
             }
         }
         return $results;

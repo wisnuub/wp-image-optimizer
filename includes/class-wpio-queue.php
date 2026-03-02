@@ -4,56 +4,69 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 /**
  * Chunked background queue processor.
  *
- * Processes images in small batches using Action Scheduler (if available)
- * or a WP Cron fallback. Prevents timeout and memory overload.
- *
- * Settings used:
- *   wpio_batch_size   (default 5)   — images per chunk
- *   wpio_sleep_time   (default 500) — ms sleep between chunks (microseconds * 1000)
+ * - Processes images in small batches via AJAX (foreground) or WP-Cron (background).
+ * - WP-Cron heartbeat keeps processing even if the admin closes the browser.
+ * - Fully unlimited — processes every image across all configured folders.
+ * - Throttle: configurable sleep between chunks to protect shared hosting.
  */
 class WPIO_Queue {
 
     const OPTION_QUEUE    = 'wpio_queue_list';
     const OPTION_RUNNING  = 'wpio_queue_running';
     const OPTION_PROGRESS = 'wpio_queue_progress';
-    const CRON_HOOK       = 'wpio_process_queue_chunk';
+    const CRON_HOOK       = 'wpio_bg_process_chunk';
+    const CRON_INTERVAL   = 'wpio_every_30s';
 
     /**
-     * Build the queue from all unprocessed uploads images.
+     * Register custom WP-Cron interval and hook.
+     */
+    public static function register_cron() {
+        add_filter( 'cron_schedules', function( $schedules ) {
+            $schedules[ self::CRON_INTERVAL ] = array(
+                'interval' => 30,
+                'display'  => 'Every 30 Seconds (WPIO Background)',
+            );
+            return $schedules;
+        } );
+        add_action( self::CRON_HOOK, array( __CLASS__, 'process_chunk' ) );
+    }
+
+    /**
+     * Build the queue from all unprocessed images in configured folders.
+     *
+     * @return int  Total images queued.
      */
     public static function build() {
-        $format     = get_option( 'wpio_format', 'webp' );
-        $upload_dir = wp_upload_dir();
-        $base_dir   = $upload_dir['basedir'];
-        $iterator   = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator( $base_dir, RecursiveDirectoryIterator::SKIP_DOTS )
-        );
-        $queue = array();
-        foreach ( $iterator as $file ) {
-            if ( $file->isDir() ) continue;
-            $path = $file->getPathname();
-            if ( strpos( $path, 'wpio-backups' ) !== false ) continue;
-            $ext = strtolower( $file->getExtension() );
-            if ( ! in_array( $ext, array( 'jpg', 'jpeg', 'png' ) ) ) continue;
-            $conv = preg_replace( '/\.(jpe?g|png)$/i', '.' . $format, $path );
-            if ( file_exists( $conv ) ) continue; // Already done
-            $queue[] = $path;
-        }
+        $format = get_option( 'wpio_format', 'webp' );
+        $queue  = WPIO_Folder_Scanner::get_pending_images( $format );
 
         update_option( self::OPTION_QUEUE, $queue, false );
-        update_option( self::OPTION_PROGRESS, array( 'total' => count( $queue ), 'done' => 0, 'errors' => 0 ), false );
+        update_option( self::OPTION_PROGRESS, array(
+            'total'  => count( $queue ),
+            'done'   => 0,
+            'errors' => 0,
+            'method' => 'idle',
+        ), false );
         update_option( self::OPTION_RUNNING, 1 );
         WPIO_Stats::bust_cache();
+
+        // Schedule background cron if not already scheduled
+        if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
+            wp_schedule_event( time() + 5, self::CRON_INTERVAL, self::CRON_HOOK );
+        }
+
         return count( $queue );
     }
 
     /**
-     * Process one chunk. Called via AJAX or WP-Cron.
+     * Process one chunk of images from the queue.
+     * Called by AJAX (foreground) or WP-Cron (background).
      *
-     * @return array  status info
+     * @return array  Status info.
      */
     public static function process_chunk() {
         if ( ! get_option( self::OPTION_RUNNING ) ) {
+            self::unschedule_cron();
             return array( 'status' => 'idle' );
         }
 
@@ -63,17 +76,29 @@ class WPIO_Queue {
         $sleep_ms   = max( 0, (int) get_option( 'wpio_sleep_time', 500 ) );
         $format     = get_option( 'wpio_format', 'webp' );
         $quality    = (int) get_option( 'wpio_quality', 82 );
+        $use_remote = WPIO_Remote::is_enabled();
 
-        // Raise PHP limits for this request
         self::raise_limits();
 
         $chunk = array_splice( $queue, 0, $batch_size );
 
         foreach ( $chunk as $file ) {
+            // Backup original if enabled
             if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
                 WPIO_Backup::backup( $file );
             }
-            $result = WPIO_Converter::convert( $file, $format, $quality );
+
+            // Try remote first, fallback to local
+            if ( $use_remote ) {
+                $result = WPIO_Remote::convert( $file, $format, $quality );
+                if ( is_wp_error( $result ) ) {
+                    // Fallback to local on remote failure
+                    $result = WPIO_Converter::convert_local( $file, $format, $quality );
+                }
+            } else {
+                $result = WPIO_Converter::convert_local( $file, $format, $quality );
+            }
+
             if ( is_wp_error( $result ) ) {
                 $progress['errors']++;
             } else {
@@ -86,23 +111,20 @@ class WPIO_Queue {
 
         if ( empty( $queue ) ) {
             update_option( self::OPTION_RUNNING, 0 );
+            self::unschedule_cron();
             WPIO_Stats::bust_cache();
             return array( 'status' => 'done', 'progress' => $progress );
         }
 
-        // Throttle: sleep between chunks to reduce server load
-        if ( $sleep_ms > 0 ) {
-            usleep( $sleep_ms * 1000 );
-        }
+        if ( $sleep_ms > 0 ) usleep( $sleep_ms * 1000 );
 
-        return array( 'status' => 'running', 'progress' => $progress, 'remaining' => count( $queue ) );
+        return array(
+            'status'    => 'running',
+            'progress'  => $progress,
+            'remaining' => count( $queue ),
+        );
     }
 
-    /**
-     * Get current queue progress.
-     *
-     * @return array
-     */
     public static function get_progress() {
         return array(
             'running'   => (bool) get_option( self::OPTION_RUNNING, 0 ),
@@ -111,29 +133,25 @@ class WPIO_Queue {
         );
     }
 
-    /**
-     * Cancel a running queue.
-     */
     public static function cancel() {
         update_option( self::OPTION_RUNNING, 0 );
         update_option( self::OPTION_QUEUE, array() );
+        self::unschedule_cron();
     }
 
-    /**
-     * Temporarily raise PHP limits for conversion requests.
-     * Won't override server hard limits, but helps on shared hosting.
-     */
     public static function raise_limits() {
         $memory = get_option( 'wpio_memory_limit', '256M' );
         $time   = (int) get_option( 'wpio_exec_time', 120 );
-
         if ( function_exists( 'wp_raise_memory_limit' ) ) {
-            // Use WP's built-in raiser for image context
             add_filter( 'image_memory_limit', function() use ( $memory ) { return $memory; } );
             wp_raise_memory_limit( 'image' );
         }
-        // Fallback direct ini_set (may be ignored on strict hosts)
         @ini_set( 'memory_limit', $memory );
         @set_time_limit( $time );
+    }
+
+    private static function unschedule_cron() {
+        $timestamp = wp_next_scheduled( self::CRON_HOOK );
+        if ( $timestamp ) wp_unschedule_event( $timestamp, self::CRON_HOOK );
     }
 }
