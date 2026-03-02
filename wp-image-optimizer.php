@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Image Optimizer
  * Plugin URI:  https://github.com/wisnuub/wp-image-optimizer
- * Description: Convert images to WebP/AVIF without breaking links. Custom folders, background queue, remote server conversion, smart resize.
+ * Description: Convert images to WebP/AVIF without breaking links. Custom folders, background queue, remote server (coming soon), smart resize.
  * Version:     1.1
  * Author:      Wisnu A. Kurniawan
  * Author URI:  https://github.com/wisnuub
@@ -32,7 +32,6 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
     require_once WPIO_PATH . 'includes/class-wpio-cli.php';
 }
 
-// Register cron for background processing
 WPIO_Queue::register_cron();
 
 register_activation_hook( __FILE__, array( 'WPIO_Rewrite', 'activate' ) );
