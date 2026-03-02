@@ -3,34 +3,31 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
  * Handles image conversion to WebP / AVIF using GD or Imagick.
+ * Optionally backs up originals before converting.
  */
 class WPIO_Converter {
 
-    /**
-     * Convert a single image file to the target format.
-     *
-     * @param string $source_path  Absolute path to source image.
-     * @param string $format       'webp' or 'avif'.
-     * @param int    $quality      Compression quality (1-100).
-     * @return string|WP_Error     Path to converted file or WP_Error.
-     */
     public static function convert( $source_path, $format = 'webp', $quality = 82 ) {
         if ( ! file_exists( $source_path ) ) {
             return new WP_Error( 'file_not_found', 'Source image not found: ' . $source_path );
         }
 
-        $info = pathinfo( $source_path );
+        $info      = pathinfo( $source_path );
         $dest_path = $info['dirname'] . '/' . $info['filename'] . '.' . $format;
 
-        // Skip if already converted
         if ( file_exists( $dest_path ) ) {
             return $dest_path;
         }
 
-        $ext = strtolower( $info['extension'] );
+        $ext     = strtolower( $info['extension'] );
         $allowed = array( 'jpg', 'jpeg', 'png', 'gif' );
         if ( ! in_array( $ext, $allowed ) ) {
             return new WP_Error( 'unsupported_type', 'Unsupported image type: ' . $ext );
+        }
+
+        // Backup original if enabled
+        if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
+            WPIO_Backup::backup( $source_path );
         }
 
         if ( extension_loaded( 'imagick' ) ) {
@@ -78,13 +75,6 @@ class WPIO_Converter {
         }
     }
 
-    /**
-     * Batch convert all images in the WordPress uploads directory.
-     *
-     * @param string $format  'webp' or 'avif'.
-     * @param int    $quality Quality (1-100).
-     * @return array          Array of results.
-     */
     public static function batch_convert( $format = 'webp', $quality = 82 ) {
         $upload_dir = wp_upload_dir();
         $base_dir   = $upload_dir['basedir'];
@@ -96,10 +86,13 @@ class WPIO_Converter {
 
         foreach ( $iterator as $file ) {
             if ( $file->isDir() ) continue;
+            $path = $file->getPathname();
+            // Skip wpio-backups folder
+            if ( strpos( $path, 'wpio-backups' ) !== false ) continue;
             $ext = strtolower( $file->getExtension() );
             if ( ! in_array( $ext, array( 'jpg', 'jpeg', 'png' ) ) ) continue;
 
-            $result = self::convert( $file->getPathname(), $format, $quality );
+            $result = self::convert( $path, $format, $quality );
             if ( is_wp_error( $result ) ) {
                 $results['error'][] = array( 'file' => $file->getFilename(), 'error' => $result->get_error_message() );
             } else {
