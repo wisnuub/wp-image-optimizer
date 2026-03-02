@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Image Optimizer
  * Plugin URI:  https://github.com/wisnuub/wp-image-optimizer
- * Description: Convert and compress existing images to WebP/AVIF without breaking site links. Uses .htaccess or Nginx rewrite rules so old .jpg/.png URLs still work.
+ * Description: Convert and compress existing images to WebP/AVIF without breaking site links. Chunked queue processing keeps your server safe.
  * Version:     1.1
  * Author:      Wisnu A. Kurniawan
  * Author URI:  https://github.com/wisnuub
@@ -16,9 +16,11 @@ define( 'WPIO_VERSION', '1.1' );
 define( 'WPIO_PATH', plugin_dir_path( __FILE__ ) );
 define( 'WPIO_URL', plugin_dir_url( __FILE__ ) );
 
+require_once WPIO_PATH . 'includes/class-wpio-environment.php';
 require_once WPIO_PATH . 'includes/class-wpio-converter.php';
 require_once WPIO_PATH . 'includes/class-wpio-backup.php';
 require_once WPIO_PATH . 'includes/class-wpio-stats.php';
+require_once WPIO_PATH . 'includes/class-wpio-queue.php';
 require_once WPIO_PATH . 'includes/class-wpio-rewrite.php';
 require_once WPIO_PATH . 'includes/class-wpio-nginx.php';
 require_once WPIO_PATH . 'includes/class-wpio-media-column.php';
