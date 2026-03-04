@@ -1,20 +1,21 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-/**
- * Custom folder scanner.
- *
- * Scans one or more configured directories for images,
- * supporting both the default /uploads folder and any
- * custom absolute or relative-to-ABSPATH paths.
- */
 class WPIO_Folder_Scanner {
 
     /**
+     * Get allowed extensions based on saved options.
+     */
+    public static function get_allowed_extensions() {
+        $exts = array();
+        if ( get_option( 'wpio_ext_jpg', '1' ) === '1' ) { $exts[] = 'jpg'; $exts[] = 'jpeg'; }
+        if ( get_option( 'wpio_ext_png', '1' ) === '1' ) { $exts[] = 'png'; }
+        if ( get_option( 'wpio_ext_gif', '0' ) === '1' ) { $exts[] = 'gif'; }
+        return ! empty( $exts ) ? $exts : array( 'jpg', 'jpeg', 'png' ); // safe fallback
+    }
+
+    /**
      * Get the list of configured folders to scan.
-     * Stored as newline-separated paths in option 'wpio_custom_folders'.
-     *
-     * @return array  Array of absolute directory paths.
      */
     public static function get_folders() {
         $upload_dir  = wp_upload_dir();
@@ -25,7 +26,6 @@ class WPIO_Folder_Scanner {
         if ( ! empty( $custom_raw ) ) {
             $lines = array_filter( array_map( 'trim', explode( "\n", $custom_raw ) ) );
             foreach ( $lines as $line ) {
-                // Support relative paths (relative to ABSPATH)
                 if ( ! path_is_absolute( $line ) ) {
                     $line = rtrim( ABSPATH, '/' ) . '/' . ltrim( $line, '/' );
                 }
@@ -41,13 +41,11 @@ class WPIO_Folder_Scanner {
 
     /**
      * Scan all configured folders and return list of unconverted image paths.
-     *
-     * @param string $format  Target format to check against.
-     * @return array
      */
     public static function get_pending_images( $format = 'webp' ) {
-        $files   = array();
-        $folders = self::get_folders();
+        $files    = array();
+        $folders  = self::get_folders();
+        $allowed  = self::get_allowed_extensions();
 
         foreach ( $folders as $dir ) {
             if ( ! is_dir( $dir ) ) continue;
@@ -59,8 +57,8 @@ class WPIO_Folder_Scanner {
                 $path = $file->getPathname();
                 if ( strpos( $path, 'wpio-backups' ) !== false ) continue;
                 $ext = strtolower( $file->getExtension() );
-                if ( ! in_array( $ext, array( 'jpg', 'jpeg', 'png' ) ) ) continue;
-                $conv = preg_replace( '/\.(jpe?g|png)$/i', '.' . $format, $path );
+                if ( ! in_array( $ext, $allowed ) ) continue;
+                $conv = preg_replace( '/\.(jpe?g|png|gif)$/i', '.' . $format, $path );
                 if ( file_exists( $conv ) ) continue;
                 $files[] = $path;
             }
@@ -70,13 +68,12 @@ class WPIO_Folder_Scanner {
     }
 
     /**
-     * Get all images (converted + unconverted) across all folders.
-     *
-     * @param string $format
-     * @return array  Array with 'total', 'converted', 'pending' counts.
+     * Get all images (converted + unconverted) counts across all folders.
      */
     public static function get_counts( $format = 'webp' ) {
         $total = $converted = 0;
+        $allowed = self::get_allowed_extensions();
+
         foreach ( self::get_folders() as $dir ) {
             if ( ! is_dir( $dir ) ) continue;
             $iterator = new RecursiveIteratorIterator(
@@ -87,9 +84,9 @@ class WPIO_Folder_Scanner {
                 $path = $file->getPathname();
                 if ( strpos( $path, 'wpio-backups' ) !== false ) continue;
                 $ext = strtolower( $file->getExtension() );
-                if ( ! in_array( $ext, array( 'jpg', 'jpeg', 'png' ) ) ) continue;
+                if ( ! in_array( $ext, $allowed ) ) continue;
                 $total++;
-                $conv = preg_replace( '/\.(jpe?g|png)$/i', '.' . $format, $path );
+                $conv = preg_replace( '/\.(jpe?g|png|gif)$/i', '.' . $format, $path );
                 if ( file_exists( $conv ) ) $converted++;
             }
         }

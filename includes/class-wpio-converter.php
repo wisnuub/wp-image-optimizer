@@ -3,26 +3,18 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
  * Handles local image conversion to WebP / AVIF.
- * Routes through remote server if enabled via WPIO_Remote.
- * Features: EXIF stripping, smart resize (max-dimension or fixed-width), backup.
+ * Supported extensions are read dynamically from plugin options.
  */
 class WPIO_Converter {
 
-    /**
-     * Main entry: route to remote or local.
-     */
     public static function convert( $source_path, $format = 'webp', $quality = 82 ) {
         if ( WPIO_Remote::is_enabled() ) {
             $result = WPIO_Remote::convert( $source_path, $format, $quality );
             if ( ! is_wp_error( $result ) ) return $result;
-            // Fallback to local on error
         }
         return self::convert_local( $source_path, $format, $quality );
     }
 
-    /**
-     * Local conversion only (GD or Imagick).
-     */
     public static function convert_local( $source_path, $format = 'webp', $quality = 82 ) {
         if ( ! file_exists( $source_path ) ) {
             return new WP_Error( 'file_not_found', 'Source image not found: ' . $source_path );
@@ -33,19 +25,24 @@ class WPIO_Converter {
 
         if ( file_exists( $dest_path ) ) return $dest_path;
 
-        $ext = strtolower( $info['extension'] );
-        if ( ! in_array( $ext, array( 'jpg', 'jpeg', 'png', 'gif' ) ) ) {
-            return new WP_Error( 'unsupported_type', 'Unsupported image type: ' . $ext );
+        $ext     = strtolower( $info['extension'] );
+        $allowed = class_exists( 'WPIO_Folder_Scanner' )
+            ? WPIO_Folder_Scanner::get_allowed_extensions()
+            : array( 'jpg', 'jpeg', 'png', 'gif' );
+
+        if ( ! in_array( $ext, $allowed ) ) {
+            return new WP_Error( 'unsupported_type', 'Unsupported or disabled image type: ' . $ext );
         }
 
-        // Backup before converting
         if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
             WPIO_Backup::backup( $source_path );
         }
 
-        if ( extension_loaded( 'imagick' ) ) {
+        $method = get_option( 'wpio_conversion_method', 'auto' );
+
+        if ( $method === 'imagick' || ( $method === 'auto' && extension_loaded( 'imagick' ) ) ) {
             return self::convert_imagick( $source_path, $dest_path, $format, $quality );
-        } elseif ( extension_loaded( 'gd' ) ) {
+        } elseif ( $method === 'gd' || ( $method === 'auto' && extension_loaded( 'gd' ) ) ) {
             return self::convert_gd( $source_path, $dest_path, $format, $quality );
         }
 
@@ -59,9 +56,13 @@ class WPIO_Converter {
             case 'jpeg': $image = imagecreatefromjpeg( $src ); break;
             case 'png':  $image = imagecreatefrompng( $src );  break;
             case 'gif':  $image = imagecreatefromgif( $src );  break;
-            default: return new WP_Error( 'unsupported', 'Unsupported format' );
+            default: return new WP_Error( 'unsupported', 'Unsupported format: ' . $ext );
         }
         if ( ! $image ) return new WP_Error( 'gd_create_failed', 'GD could not open image.' );
+
+        if ( get_option( 'wpio_strip_exif', '1' ) === '1' ) {
+            // GD strips EXIF automatically on re-encode; no extra step needed
+        }
 
         $image  = self::maybe_resize_gd( $image );
         $result = false;
@@ -72,6 +73,13 @@ class WPIO_Converter {
         }
         imagedestroy( $image );
         if ( ! $result ) return new WP_Error( 'gd_convert_failed', 'GD conversion failed for: ' . basename( $src ) );
+
+        // Remove if output is larger than source
+        if ( get_option( 'wpio_remove_if_larger', '1' ) === '1' && file_exists( $dest ) && filesize( $dest ) >= filesize( $src ) ) {
+            unlink( $dest );
+            return new WP_Error( 'output_larger', 'Converted file was larger than original — skipped.' );
+        }
+
         return $dest;
     }
 
@@ -80,8 +88,7 @@ class WPIO_Converter {
             $im = new Imagick( $src );
             if ( get_option( 'wpio_strip_exif', '1' ) === '1' ) $im->stripImage();
 
-            // Smart resize
-            $resize_mode = get_option( 'wpio_resize_mode', 'max_dimension' );
+            $resize_mode = get_option( 'wpio_resize_mode', 'none' );
             $max_dim     = (int) get_option( 'wpio_max_dimension', 0 );
             $max_width   = (int) get_option( 'wpio_max_width', 0 );
             $w = $im->getImageWidth();
@@ -99,6 +106,13 @@ class WPIO_Converter {
             $im->writeImage( $dest );
             $im->clear();
             $im->destroy();
+
+            // Remove if output is larger than source
+            if ( get_option( 'wpio_remove_if_larger', '1' ) === '1' && file_exists( $dest ) && filesize( $dest ) >= filesize( $src ) ) {
+                unlink( $dest );
+                return new WP_Error( 'output_larger', 'Converted file was larger than original — skipped.' );
+            }
+
             return $dest;
         } catch ( Exception $e ) {
             return new WP_Error( 'imagick_failed', $e->getMessage() );
@@ -106,12 +120,11 @@ class WPIO_Converter {
     }
 
     private static function maybe_resize_gd( $image ) {
-        $resize_mode = get_option( 'wpio_resize_mode', 'max_dimension' );
+        $resize_mode = get_option( 'wpio_resize_mode', 'none' );
         $max_dim     = (int) get_option( 'wpio_max_dimension', 0 );
         $max_width   = (int) get_option( 'wpio_max_width', 0 );
         $w = imagesx( $image );
         $h = imagesy( $image );
-
         $new_w = $w; $new_h = $h;
 
         if ( $resize_mode === 'max_dimension' && $max_dim > 0 && ( $w > $max_dim || $h > $max_dim ) ) {
@@ -127,7 +140,6 @@ class WPIO_Converter {
         if ( $new_w === $w && $new_h === $h ) return $image;
 
         $resized = imagecreatetruecolor( $new_w, $new_h );
-        // Preserve PNG transparency
         imagealphablending( $resized, false );
         imagesavealpha( $resized, true );
         imagecopyresampled( $resized, $image, 0, 0, 0, 0, $new_w, $new_h, $w, $h );
@@ -135,9 +147,6 @@ class WPIO_Converter {
         return $resized;
     }
 
-    /**
-     * Legacy batch (used by WP-CLI). For admin bulk, use WPIO_Queue.
-     */
     public static function batch_convert( $format = 'webp', $quality = 82 ) {
         $files   = WPIO_Folder_Scanner::get_pending_images( $format );
         $results = array( 'success' => array(), 'skipped' => array(), 'error' => array() );
