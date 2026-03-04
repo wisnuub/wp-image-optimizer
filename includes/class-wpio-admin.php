@@ -8,7 +8,9 @@ class WPIO_Admin {
     public function __construct() {
         add_action( 'admin_menu',                  array( $this, 'add_menu' ) );
         add_action( 'admin_init',                  array( $this, 'register_settings' ) );
+        add_action( 'admin_init',                  array( 'WPIO_Rewrite', 'check_rules' ) );
         add_action( 'admin_notices',               array( 'WPIO_Environment', 'admin_notice' ) );
+        add_action( 'admin_notices',               array( 'WPIO_Rewrite', 'maybe_show_notice' ) );
         add_action( 'admin_enqueue_scripts',       array( $this, 'enqueue_assets' ) );
         add_action( 'wp_ajax_wpio_queue_start',    array( $this, 'ajax_queue_start' ) );
         add_action( 'wp_ajax_wpio_queue_chunk',    array( $this, 'ajax_queue_chunk' ) );
@@ -17,6 +19,9 @@ class WPIO_Admin {
         add_action( 'wp_ajax_wpio_restore_image',  array( $this, 'ajax_restore_image' ) );
         add_action( 'wp_ajax_wpio_delete_backup',  array( $this, 'ajax_delete_backup' ) );
         add_action( 'wp_ajax_wpio_folder_tree',    array( $this, 'ajax_folder_tree' ) );
+        add_action( 'admin_post_wpio_dismiss_rewrite_notice', array( 'WPIO_Rewrite', 'handle_dismiss' ) );
+        add_action( 'admin_post_wpio_repair_rewrite_rules',   array( 'WPIO_Rewrite', 'handle_repair' ) );
+        add_action( WPIO_Rewrite::CRON_HOOK,       array( 'WPIO_Rewrite', 'check_rules' ) );
         add_action( 'add_attachment',              array( $this, 'on_upload' ) );
         new WPIO_Media_Column();
     }
@@ -97,6 +102,11 @@ class WPIO_Admin {
         $tab      = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'general';
         $base_url = admin_url( 'upload.php?page=wp-image-optimizer' );
         $banner   = apply_filters( 'wpio_banner_image_url', '' );
+
+        // Show repair success flash.
+        if ( isset( $_GET['wpio_repaired'] ) ) {
+            echo '<div class="notice notice-success is-dismissible"><p><strong>WP Image Optimizer:</strong> Rewrite rules have been repaired successfully. ✅</p></div>';
+        }
         ?>
         <div class="wrap wpio-wrap">
             <div class="wpio-banner">
@@ -193,12 +203,33 @@ class WPIO_Admin {
                         </table>
                     </div>
                 </div>
+
+                <?php
+                // WebP upgrade hint: show when format is webp and converted files already exist.
+                if ( $format === 'webp' ) {
+                    $stats = WPIO_Stats::get();
+                    if ( $stats['converted'] > 0 ) :
+                    ?>
+                    <div class="wpio-alert info wpio-avif-hint" style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <span class="wpio-alert-icon">💡</span>
+                        <span style="flex:1;">
+                            <strong><?php echo esc_html( $stats['converted'] ); ?> images</strong> are already converted to WebP.
+                            Switch to <strong>AVIF</strong> for an extra ~20% file size reduction — browsers that don't support AVIF will automatically fall back to the original.
+                        </span>
+                        <a href="#" class="wpio-notice-btn wpio-notice-btn-primary" style="font-size:12px;padding:4px 12px;border-radius:4px;background:#FF2462;color:#fff;text-decoration:none;white-space:nowrap;"
+                           onclick="document.querySelector('[data-format=avif]').click();return false;">Switch to AVIF ↑</a>
+                    </div>
+                    <?php endif;
+                }
+                ?>
+
                 <?php if ( $format === 'avif' || $format === 'both' ) : ?>
                 <div class="wpio-alert warn">
                     <span class="wpio-alert-icon">⚠️</span>
                     <span>AVIF requires PHP 8.1+ and libavif. Check <a href="<?php echo esc_url( admin_url('upload.php?page=wp-image-optimizer&tab=system') ); ?>">System Status</a> before using.</span>
                 </div>
                 <?php endif; ?>
+
                 <div class="wpio-field-row" style="margin-top:8px;">
                     <div class="wpio-field-label">Conversion quality<small>80–85 recommended</small></div>
                     <div class="wpio-field-input">
@@ -624,6 +655,7 @@ class WPIO_Admin {
                         array( 'Batch Size',          get_option('wpio_batch_size',5) . ' images/chunk' ),
                         array( 'Background Cron',     $ts ? '🟢 Scheduled (next: ' . human_time_diff($ts) . ')' : '⚪ Not scheduled' ),
                         array( 'Server Software',     $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown' ),
+                        array( 'Rewrite Rules',       get_option( WPIO_Rewrite::TAMPER_KEY ) ? '⚠️ Tampered / Missing' : '✅ OK' ),
                     );
                     foreach ( $rows as $row ) :
                     ?>
@@ -640,7 +672,7 @@ class WPIO_Admin {
        TAB: HELP
     ================================================ */
     private function tab_help() {
-        $backup_dir = WP_CONTENT_DIR . '/uploads/wpio-backups';
+        $backup_dir  = WP_CONTENT_DIR . '/uploads/wpio-backups';
         $has_backups = is_dir( $backup_dir ) && count( glob( $backup_dir . '/**/*', GLOB_NOSORT ) ) > 0;
         ?>
         <div class="wpio-layout full">
