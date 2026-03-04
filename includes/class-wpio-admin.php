@@ -48,30 +48,24 @@ class WPIO_Admin {
     /* -- Settings ------------------------------------- */
     public function register_settings() {
         $defaults = array(
-            // Format & quality
             'wpio_format'           => 'webp',
             'wpio_quality'          => 82,
-            // Supported extensions
             'wpio_ext_jpg'          => '1',
             'wpio_ext_png'          => '1',
             'wpio_ext_gif'          => '0',
-            // Conversion behaviour
+            'wpio_excluded_dirs'    => '',
             'wpio_auto_convert'     => '1',
             'wpio_backup_enabled'   => '1',
             'wpio_strip_exif'       => '1',
             'wpio_remove_if_larger' => '1',
-            // Resize
             'wpio_resize_mode'      => 'none',
             'wpio_max_dimension'    => 0,
             'wpio_max_width'        => 0,
-            // Server
             'wpio_batch_size'       => 5,
             'wpio_sleep_time'       => 500,
             'wpio_memory_limit'     => '256M',
             'wpio_exec_time'        => 120,
-            // Folders
             'wpio_custom_folders'   => '',
-            // Remote (coming soon)
             'wpio_use_remote'       => '0',
             'wpio_remote_url'       => '',
             'wpio_remote_token'     => '',
@@ -99,7 +93,6 @@ class WPIO_Admin {
         $banner   = apply_filters( 'wpio_banner_image_url', '' );
         ?>
         <div class="wrap wpio-wrap">
-            <!-- Banner -->
             <div class="wpio-banner">
                 <?php if ( $banner ) : ?>
                     <img src="<?php echo esc_url( $banner ); ?>" alt="WP Image Optimizer" class="wpio-banner-img" />
@@ -114,7 +107,6 @@ class WPIO_Admin {
                 </div>
                 <?php endif; ?>
             </div>
-            <!-- Tabs -->
             <div class="wpio-tabs-wrap">
                 <ul class="wpio-nav-tabs">
                     <?php foreach ( $this->get_tabs() as $key => $t ) : ?>
@@ -157,7 +149,6 @@ class WPIO_Admin {
         <input type="hidden" name="wpio_format" id="wpio_format_hidden" value="<?php echo esc_attr( $format ); ?>" />
         <input type="hidden" name="wpio_quality" id="wpio_quality_hidden" value="<?php echo esc_attr( $quality ); ?>" />
 
-        <!-- Format picker -->
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>🖼️ Next-gen image formats</h2>
@@ -213,7 +204,6 @@ class WPIO_Admin {
             </div>
         </div>
 
-        <!-- Browser support flow -->
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>🌐 Browser support &amp; fallback</h2>
@@ -246,7 +236,6 @@ class WPIO_Admin {
             </div>
         </div>
 
-        <!-- Conversion settings -->
         <div class="wpio-card">
             <div class="wpio-card-head"><div><h2>⚡ Conversion settings</h2></div></div>
             <div class="wpio-card-body">
@@ -271,14 +260,12 @@ class WPIO_Admin {
             </div>
         </div>
 
-        <!-- Bulk optimization -->
         <?php $this->render_bulk_card(); ?>
-
         <?php submit_button( 'Save Settings', '', 'submit', true, array( 'class' => 'wpio-btn wpio-btn-primary wpio-btn-lg', 'style' => 'margin-top:4px;' ) ); ?>
         </form>
-        </div><!-- .wpio-main -->
+        </div>
         <?php $this->render_sidebar(); ?>
-        </div><!-- .wpio-layout -->
+        </div>
         <?php
     }
 
@@ -287,22 +274,23 @@ class WPIO_Admin {
     ================================================ */
     private function tab_advanced() {
         $o = array(
-            // T1 — extensions
-            'ext_jpg'       => get_option( 'wpio_ext_jpg', '1' ),
-            'ext_png'       => get_option( 'wpio_ext_png', '1' ),
-            'ext_gif'       => get_option( 'wpio_ext_gif', '0' ),
-            // existing
-            'strip_exif'    => get_option( 'wpio_strip_exif', '1' ),
-            'remove_larger' => get_option( 'wpio_remove_if_larger', '1' ),
-            'resize_mode'   => get_option( 'wpio_resize_mode', 'none' ),
-            'max_dimension' => get_option( 'wpio_max_dimension', 0 ),
-            'max_width'     => get_option( 'wpio_max_width', 0 ),
-            'batch_size'    => get_option( 'wpio_batch_size', 5 ),
-            'sleep_time'    => get_option( 'wpio_sleep_time', 500 ),
-            'memory_limit'  => get_option( 'wpio_memory_limit', '256M' ),
-            'exec_time'     => get_option( 'wpio_exec_time', 120 ),
-            'custom_folders'=> get_option( 'wpio_custom_folders', '' ),
+            'ext_jpg'        => get_option( 'wpio_ext_jpg', '1' ),
+            'ext_png'        => get_option( 'wpio_ext_png', '1' ),
+            'ext_gif'        => get_option( 'wpio_ext_gif', '0' ),
+            'excluded_dirs'  => get_option( 'wpio_excluded_dirs', '' ),
+            'strip_exif'     => get_option( 'wpio_strip_exif', '1' ),
+            'remove_larger'  => get_option( 'wpio_remove_if_larger', '1' ),
+            'resize_mode'    => get_option( 'wpio_resize_mode', 'none' ),
+            'max_dimension'  => get_option( 'wpio_max_dimension', 0 ),
+            'max_width'      => get_option( 'wpio_max_width', 0 ),
+            'batch_size'     => get_option( 'wpio_batch_size', 5 ),
+            'sleep_time'     => get_option( 'wpio_sleep_time', 500 ),
+            'memory_limit'   => get_option( 'wpio_memory_limit', '256M' ),
+            'exec_time'      => get_option( 'wpio_exec_time', 120 ),
+            'custom_folders' => get_option( 'wpio_custom_folders', '' ),
         );
+        // Build preview of excluded dirs
+        $excluded_preview = WPIO_Folder_Scanner::get_excluded_dirs();
         ?>
         <div class="wpio-layout full">
         <form method="post" action="options.php">
@@ -312,7 +300,7 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>📋 Supported file extensions</h2>
-                <p>Files with these extensions will be converted to next-gen formats during bulk and auto-convert.</p>
+                <p>Files with these extensions will be converted during bulk and auto-convert.</p>
             </div></div>
             <div class="wpio-card-body">
                 <div class="wpio-toggle-row">
@@ -335,7 +323,7 @@ class WPIO_Admin {
                 </div>
                 <div class="wpio-toggle-row">
                     <div class="label">.gif
-                        <small>Static GIFs only — animated GIFs are not supported and will be skipped</small>
+                        <small>Static GIFs only — animated GIFs will be skipped automatically</small>
                     </div>
                     <label class="wpio-toggle">
                         <input type="checkbox" name="wpio_ext_gif" value="1" <?php checked( $o['ext_gif'], '1' ); ?> />
@@ -344,8 +332,41 @@ class WPIO_Admin {
                 </div>
                 <div class="wpio-alert info" style="margin-top:4px;">
                     <span class="wpio-alert-icon">ℹ️</span>
-                    <span>At least one extension must be enabled. If all are disabled, JPG and PNG will be used as fallback.</span>
+                    <span>If all are disabled, JPG and PNG will be used as a safe fallback.</span>
                 </div>
+            </div>
+        </div>
+
+        <!-- T2: Excluded directories -->
+        <div class="wpio-card">
+            <div class="wpio-card-head"><div>
+                <h2>🚫 Excluded directories</h2>
+                <p>Directory name fragments separated by commas. Any path containing these strings will be skipped during scanning.</p>
+            </div></div>
+            <div class="wpio-card-body">
+                <div class="wpio-field-row">
+                    <div class="wpio-field-label">Excluded paths
+                        <small>Comma-separated name fragments</small>
+                    </div>
+                    <div class="wpio-field-input">
+                        <input type="text"
+                               name="wpio_excluded_dirs"
+                               value="<?php echo esc_attr( $o['excluded_dirs'] ); ?>"
+                               placeholder="cache, backup-plugin, elementor/css"
+                               style="max-width:420px;" />
+                        <div class="desc">Example: <code>cache, .git, node_modules, backup-plugin</code><br>Any file whose path contains one of these strings will be skipped.</div>
+                    </div>
+                </div>
+                <?php if ( ! empty( $excluded_preview ) ) : ?>
+                <div style="margin-top:10px;">
+                    <strong style="font-size:12px;color:#666;">Currently excluding paths containing:</strong>
+                    <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;">
+                        <?php foreach ( $excluded_preview as $fragment ) : ?>
+                        <code style="background:#fff0f4;color:#FF2462;border:1px solid #ffc2d4;padding:2px 10px;border-radius:20px;font-size:12px;"><?php echo esc_html( $fragment ); ?></code>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -382,7 +403,7 @@ class WPIO_Admin {
             </div>
         </div>
 
-        <!-- Metadata & extra features -->
+        <!-- Extra features -->
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>🏷️ Extra features</h2>
@@ -391,7 +412,7 @@ class WPIO_Admin {
             <div class="wpio-card-body">
                 <div class="wpio-toggle-row">
                     <div class="label">Remove if larger than original
-                        <small>Automatically delete the converted file if it ends up bigger than the source</small>
+                        <small>Delete the converted file automatically if it ends up bigger than the source</small>
                     </div>
                     <label class="wpio-toggle">
                         <input type="checkbox" name="wpio_remove_if_larger" value="1" <?php checked( $o['remove_larger'], '1' ); ?> />
@@ -400,7 +421,7 @@ class WPIO_Admin {
                 </div>
                 <div class="wpio-toggle-row">
                     <div class="label">Strip EXIF metadata
-                        <small>Remove camera model, GPS and other embedded data — saves extra KB &amp; improves privacy</small>
+                        <small>Remove camera model, GPS and embedded data — saves extra KB &amp; improves privacy</small>
                     </div>
                     <label class="wpio-toggle">
                         <input type="checkbox" name="wpio_strip_exif" value="1" <?php checked( $o['strip_exif'], '1' ); ?> />
@@ -425,10 +446,8 @@ class WPIO_Admin {
                         <div class="desc">PHP must have read/write access to these directories.</div>
                     </div>
                 </div>
-                <?php
-                $folders = WPIO_Folder_Scanner::get_folders();
-                if ( ! empty( $folders ) ) :
-                ?>
+                <?php $folders = WPIO_Folder_Scanner::get_folders(); ?>
+                <?php if ( ! empty( $folders ) ) : ?>
                 <div style="margin-top:12px;">
                     <strong style="font-size:12px;color:#666;">Currently scanning:</strong>
                     <ul class="wpio-folder-list">
@@ -449,23 +468,23 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>🛡️ Server protection</h2>
-                <p>Keep bulk conversion gentle on shared hosting by limiting chunk size and adding sleep between batches.</p>
+                <p>Keep bulk conversion gentle on shared hosting.</p>
             </div></div>
             <div class="wpio-card-body">
                 <div class="wpio-field-row">
-                    <div class="wpio-field-label">Images per chunk<small>Shared hosting: 3–5 · VPS: 10–20</small></div>
+                    <div class="wpio-field-label">Images per chunk<small>Shared: 3–5 · VPS: 10–20</small></div>
                     <div class="wpio-field-input">
                         <input type="number" name="wpio_batch_size" value="<?php echo esc_attr($o['batch_size']);?>" min="1" max="50" style="max-width:80px;" />
                     </div>
                 </div>
                 <div class="wpio-field-row">
-                    <div class="wpio-field-label">Pause between chunks<small>Milliseconds. 500ms safe for shared hosting.</small></div>
+                    <div class="wpio-field-label">Pause between chunks<small>ms. 500ms safe for shared hosting.</small></div>
                     <div class="wpio-field-input">
                         <input type="number" name="wpio_sleep_time" value="<?php echo esc_attr($o['sleep_time']);?>" min="0" max="5000" style="max-width:100px;" /> ms
                     </div>
                 </div>
                 <div class="wpio-field-row">
-                    <div class="wpio-field-label">Memory limit override<small>Server hard limit may override</small></div>
+                    <div class="wpio-field-label">Memory limit override</div>
                     <div class="wpio-field-input">
                         <input type="text" name="wpio_memory_limit" value="<?php echo esc_attr($o['memory_limit']);?>" style="max-width:100px;" placeholder="256M" />
                         <div class="desc">e.g. <code>256M</code>, <code>512M</code></div>
@@ -475,7 +494,6 @@ class WPIO_Admin {
                     <div class="wpio-field-label">Execution time per chunk<small>Seconds</small></div>
                     <div class="wpio-field-input">
                         <input type="number" name="wpio_exec_time" value="<?php echo esc_attr($o['exec_time']);?>" min="30" max="600" style="max-width:100px;" /> s
-                        <div class="desc">120s recommended. Lower on strict shared hosts.</div>
                     </div>
                 </div>
             </div>
@@ -529,12 +547,11 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>🔀 How image delivery works</h2>
-                <p>Original URLs stay the same. The server rewrites the response based on browser <code>Accept</code> header.</p>
             </div></div>
             <div class="wpio-card-body">
                 <div class="wpio-alert info">
                     <span class="wpio-alert-icon">ℹ️</span>
-                    <span>When a browser requests <code>photo.jpg</code>, the plugin checks if <code>photo.webp</code> (or <code>photo.avif</code>) exists and if the browser's <code>Accept</code> header supports it. If yes, the optimized file is served. <strong>No page caching issues</strong> — page generation time is unaffected.</span>
+                    <span>When a browser requests <code>photo.jpg</code>, the server checks if <code>photo.webp</code> exists and the browser supports it. If yes, the optimized file is served. <strong>No page caching issues</strong> — URLs never change.</span>
                 </div>
             </div>
         </div>
@@ -589,15 +606,17 @@ class WPIO_Admin {
                     <?php
                     $ts  = wp_next_scheduled( WPIO_Queue::CRON_HOOK );
                     $ext = WPIO_Folder_Scanner::get_allowed_extensions();
+                    $exc = WPIO_Folder_Scanner::get_excluded_dirs();
                     $rows = array(
-                        array( 'WordPress Version',  get_bloginfo('version') ),
-                        array( 'Plugin Version',     WPIO_VERSION ),
-                        array( 'Active Format',      strtoupper( get_option('wpio_format','webp') ) ),
+                        array( 'WordPress Version',   get_bloginfo('version') ),
+                        array( 'Plugin Version',      WPIO_VERSION ),
+                        array( 'Active Format',       strtoupper( get_option('wpio_format','webp') ) ),
                         array( 'Scanning Extensions', implode( ', ', array_map( 'strtoupper', $ext ) ) ),
-                        array( 'Scanned Folders',    count( WPIO_Folder_Scanner::get_folders() ) ),
-                        array( 'Batch Size',         get_option('wpio_batch_size',5) . ' images/chunk' ),
-                        array( 'Background Cron',    $ts ? '🟢 Scheduled (next: ' . human_time_diff($ts) . ')' : '⚪ Not scheduled' ),
-                        array( 'Server Software',    $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown' ),
+                        array( 'Excluded Fragments',  ! empty( $exc ) ? implode( ', ', $exc ) : 'none' ),
+                        array( 'Scanned Folders',     count( WPIO_Folder_Scanner::get_folders() ) ),
+                        array( 'Batch Size',          get_option('wpio_batch_size',5) . ' images/chunk' ),
+                        array( 'Background Cron',     $ts ? '🟢 Scheduled (next: ' . human_time_diff($ts) . ')' : '⚪ Not scheduled' ),
+                        array( 'Server Software',     $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown' ),
                     );
                     foreach ( $rows as $row ) :
                     ?>
@@ -643,7 +662,7 @@ class WPIO_Admin {
             <div class="wpio-card-head"><div><h2>🐛 Troubleshooting</h2></div></div>
             <div class="wpio-card-body">
                 <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span><strong>Images not converting?</strong> Check System Status — GD or Imagick must support WebP/AVIF output.</span></div>
-                <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span><strong>Browser still serving JPEG?</strong> On Nginx, add rewrite rules from the Delivery tab. On Apache, deactivate and reactivate the plugin to flush rules.</span></div>
+                <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span><strong>Browser still serving JPEG?</strong> On Nginx, add rewrite rules from the Delivery tab. On Apache, deactivate and reactivate the plugin.</span></div>
                 <div class="wpio-alert info"><span class="wpio-alert-icon">ℹ️</span><span><strong>Bulk stuck?</strong> Add a real cron job in cPanel: <code>wget -q -O /dev/null "<?php echo esc_url(site_url('/wp-cron.php?doing_wp_cron')); ?>"</code></span></div>
             </div>
         </div>
@@ -663,7 +682,7 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>⚡ Bulk optimization of images</h2>
-                <p>Optimize all images with one click. Processing runs in the background — you can close this page.</p>
+                <p>Optimize all images with one click. Processing runs in the background.</p>
             </div></div>
             <div class="wpio-card-body">
                 <div class="wpio-rings">
@@ -680,29 +699,22 @@ class WPIO_Admin {
                     <button id="wpio-bulk-start" class="wpio-btn wpio-btn-primary wpio-btn-lg" <?php echo $q['running'] ? 'disabled' : ''; ?>>
                         <span>⚡</span> <?php echo $q['running'] ? 'Running&hellip;' : 'Start Bulk Convert'; ?>
                     </button>
-                    <button id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger" style="<?php echo $q['running'] ? '' : 'display:none;'; ?>">
-                        ✕ Cancel
-                    </button>
+                    <button id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger" style="<?php echo $q['running'] ? '' : 'display:none;'; ?>">✕ Cancel</button>
                 </div>
                 <div id="wpio-live-progress" style="<?php echo $q['running'] ? '' : 'display:none;'; ?>">
                     <div class="wpio-progress-wrap" style="margin-top:16px;">
-                        <div class="wpio-progress-bar" id="wpio-prog-bar"
-                             style="width:<?php echo esc_attr($p['total']>0?round($p['done']/$p['total']*100):0); ?>%;">
+                        <div class="wpio-progress-bar" id="wpio-prog-bar" style="width:<?php echo esc_attr($p['total']>0?round($p['done']/$p['total']*100):0); ?>%;">
                             <?php echo $p['total']>0 ? round($p['done']/$p['total']*100) : 0; ?>%
                         </div>
                     </div>
-                    <p id="wpio-prog-text" style="color:#666;font-size:13px;">
-                        <?php echo esc_html($p['done'] . ' / ' . $p['total'] . ' images processed'); ?>
-                    </p>
+                    <p id="wpio-prog-text" style="color:#666;font-size:13px;"><?php echo esc_html($p['done'] . ' / ' . $p['total'] . ' images processed'); ?></p>
                     <div class="wpio-bulk-log" id="wpio-bulk-log"></div>
                 </div>
                 <?php if ( $stats['backup_bytes'] > 0 ) : ?>
                 <div style="margin-top:20px;padding-top:16px;border-top:1px solid #f0f0f1;">
                     <strong style="font-size:13px;">💾 Backup storage:</strong>
                     <span style="color:#666;font-size:13px;margin-left:6px;"><?php echo esc_html($stats['backup_mb']); ?> MB used</span>
-                    <button class="wpio-btn wpio-btn-danger" id="wpio-purge-backups" style="margin-left:12px;" data-nonce="<?php echo wp_create_nonce('wpio_delete_backup_all'); ?>">
-                        🗑 Purge all backups
-                    </button>
+                    <button class="wpio-btn wpio-btn-danger" id="wpio-purge-backups" style="margin-left:12px;" data-nonce="<?php echo wp_create_nonce('wpio_delete_backup_all'); ?>">🗑 Purge all backups</button>
                     <div style="font-size:12px;color:#999;margin-top:6px;">Only purge after confirming your site looks correct.</div>
                 </div>
                 <?php endif; ?>
