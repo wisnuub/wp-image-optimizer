@@ -69,6 +69,9 @@ class WPIO_Admin {
             'wpio_memory_limit'       => '256M',
             'wpio_exec_time'          => 120,
             'wpio_custom_folders'     => '',
+            'wpio_scan_uploads'       => '1',
+            'wpio_scan_plugins'       => '0',
+            'wpio_scan_themes'        => '0',
             'wpio_use_remote'         => '0',
             'wpio_remote_url'         => '',
             'wpio_remote_token'       => '',
@@ -292,6 +295,9 @@ class WPIO_Admin {
             'memory_limit'      => get_option( 'wpio_memory_limit', '256M' ),
             'exec_time'         => get_option( 'wpio_exec_time', 120 ),
             'custom_folders'    => get_option( 'wpio_custom_folders', '' ),
+            'scan_uploads'      => get_option( 'wpio_scan_uploads', '1' ),
+            'scan_plugins'      => get_option( 'wpio_scan_plugins', '0' ),
+            'scan_themes'       => get_option( 'wpio_scan_themes', '0' ),
         );
         $has_imagick      = extension_loaded( 'imagick' );
         $has_gd           = extension_loaded( 'gd' );
@@ -324,7 +330,36 @@ class WPIO_Admin {
             </div>
         </div>
 
-        <!-- T2: Excluded directories -->
+        <!-- T2: Folder selection -->
+        <div class="wpio-card">
+            <div class="wpio-card-head"><div>
+                <h2>📁 Folders to scan</h2>
+                <p>Choose which WordPress directories to include during bulk optimization.</p>
+            </div></div>
+            <div class="wpio-card-body">
+                <div class="wpio-toggle-row">
+                    <div class="label">Uploads
+                        <small><code>/wp-content/uploads/</code> — default media library folder</small>
+                    </div>
+                    <label class="wpio-toggle"><input type="checkbox" name="wpio_scan_uploads" value="1" <?php checked($o['scan_uploads'],'1'); ?> /><span class="wpio-toggle-slider"></span></label>
+                </div>
+                <div class="wpio-toggle-row">
+                    <div class="label">Plugins
+                        <small><code>/wp-content/plugins/</code> — optimize bundled plugin images</small>
+                    </div>
+                    <label class="wpio-toggle"><input type="checkbox" name="wpio_scan_plugins" value="1" <?php checked($o['scan_plugins'],'1'); ?> /><span class="wpio-toggle-slider"></span></label>
+                </div>
+                <div class="wpio-toggle-row">
+                    <div class="label">Themes
+                        <small><code>/wp-content/themes/</code> — optimize theme images &amp; assets</small>
+                    </div>
+                    <label class="wpio-toggle"><input type="checkbox" name="wpio_scan_themes" value="1" <?php checked($o['scan_themes'],'1'); ?> /><span class="wpio-toggle-slider"></span></label>
+                </div>
+                <div class="wpio-alert info" style="margin-top:8px;"><span class="wpio-alert-icon">ℹ️</span><span>Scanning plugins or themes may take longer and affect read-only files. Make sure PHP has write access.</span></div>
+            </div>
+        </div>
+
+        <!-- T3: Excluded directories -->
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>🚫 Excluded directories</h2>
@@ -351,7 +386,7 @@ class WPIO_Admin {
             </div>
         </div>
 
-        <!-- T3: Conversion method -->
+        <!-- T4: Conversion method -->
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>⚙️ Conversion method</h2>
@@ -430,7 +465,9 @@ class WPIO_Admin {
             </div></div>
             <div class="wpio-card-body">
                 <div class="wpio-toggle-row">
-                    <div class="label">Remove if larger than original<small>Delete the converted file if it ends up bigger than source</small></div>
+                    <div class="label">Skip if converted file is larger than original
+                        <small>The converted file is discarded automatically if it ends up bigger than the source — the original is kept instead</small>
+                    </div>
                     <label class="wpio-toggle"><input type="checkbox" name="wpio_remove_if_larger" value="1" <?php checked($o['remove_larger'],'1'); ?> /><span class="wpio-toggle-slider"></span></label>
                 </div>
                 <div class="wpio-toggle-row">
@@ -458,34 +495,6 @@ class WPIO_Admin {
                     </div>
                     <ul class="wpio-tree" id="wpio-tree-root" style="display:none;"></ul>
                 </div>
-            </div>
-        </div>
-
-        <!-- Custom folders -->
-        <div class="wpio-card" id="wpio-folders">
-            <div class="wpio-card-head"><div>
-                <h2>📁 Custom folder optimization</h2>
-                <p>By default only <code>/wp-content/uploads/</code> is scanned.</p>
-            </div></div>
-            <div class="wpio-card-body">
-                <div class="wpio-field-row">
-                    <div class="wpio-field-label">Additional folders<small>One path per line.</small></div>
-                    <div class="wpio-field-input">
-                        <textarea name="wpio_custom_folders" rows="5" style="max-width:100%;width:460px;font-family:monospace;font-size:12px;" placeholder="wp-content/themes/my-theme/images"><?php echo esc_textarea($o['custom_folders']);?></textarea>
-                        <div class="desc">PHP must have read/write access to these directories.</div>
-                    </div>
-                </div>
-                <?php $folders = WPIO_Folder_Scanner::get_folders(); ?>
-                <?php if ( ! empty( $folders ) ) : ?>
-                <div style="margin-top:12px;">
-                    <strong style="font-size:12px;color:#666;">Currently scanning:</strong>
-                    <ul class="wpio-folder-list">
-                        <?php foreach ( $folders as $i => $folder ) : ?>
-                        <li><span>📂</span><?php echo esc_html($folder); ?><?php if($i===0) echo '<span class="wpio-folder-badge">default</span>'; ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-                <?php endif; ?>
             </div>
         </div>
 
@@ -628,6 +637,8 @@ class WPIO_Admin {
        TAB: HELP
     ================================================ */
     private function tab_help() {
+        $backup_dir = WP_CONTENT_DIR . '/uploads/wpio-backups';
+        $has_backups = is_dir( $backup_dir ) && count( glob( $backup_dir . '/**/*', GLOB_NOSORT ) ) > 0;
         ?>
         <div class="wpio-layout full">
         <div class="wpio-card">
@@ -637,6 +648,24 @@ class WPIO_Admin {
                 <p>Conversion happens automatically on upload, or in bulk via the <strong>General Settings</strong> tab. A background WP-Cron task continues converting even if you close the admin page.</p>
             </div>
         </div>
+
+        <div class="wpio-card">
+            <div class="wpio-card-head"><div><h2>🔁 Looking for the original image?</h2></div></div>
+            <div class="wpio-card-body">
+                <p>If you enabled <strong>Keep backup of originals</strong>, the plugin saves a copy of every image before converting it to <code>/wp-content/uploads/wpio-backups/</code>.</p>
+                <p>You can restore images in two ways:</p>
+                <ul style="margin:8px 0 12px 20px;">
+                    <li style="margin-bottom:6px;"><strong>Media Library</strong> — open any image, scroll to the <em>WP Image Optimizer</em> column and click <strong>Restore Original</strong>.</li>
+                    <li style="margin-bottom:6px;"><strong>WP-CLI</strong> — run <code>wp image-optimizer restore &lt;path&gt;</code> for a single file, or <code>wp image-optimizer restore-all</code> to restore everything at once.</li>
+                </ul>
+                <?php if ( ! $has_backups ) : ?>
+                <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span>No backups found in <code>/uploads/wpio-backups/</code>. Make sure <strong>Keep backup of originals</strong> is enabled before running bulk conversion.</span></div>
+                <?php else : ?>
+                <div class="wpio-alert ok"><span class="wpio-alert-icon">✅</span><span>Backups are present in <code>/uploads/wpio-backups/</code>. Restore is available from the Media Library or via WP-CLI.</span></div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <div class="wpio-card">
             <div class="wpio-card-head"><div><h2>💻 WP-CLI commands</h2></div></div>
             <div class="wpio-card-body">
@@ -644,11 +673,12 @@ class WPIO_Admin {
                     <tr><td><code>wp image-optimizer bulk</code></td><td>Bulk convert all pending images</td></tr>
                     <tr><td><code>wp image-optimizer bulk --format=avif --quality=80</code></td><td>Bulk with specific settings</td></tr>
                     <tr><td><code>wp image-optimizer stats</code></td><td>Show conversion stats</td></tr>
-                    <tr><td><code>wp image-optimizer restore &lt;path&gt;</code></td><td>Restore a single image</td></tr>
-                    <tr><td><code>wp image-optimizer restore-all</code></td><td>Restore all images</td></tr>
+                    <tr><td><code>wp image-optimizer restore &lt;path&gt;</code></td><td>Restore a single image from backup</td></tr>
+                    <tr><td><code>wp image-optimizer restore-all</code></td><td>Restore all images from backup</td></tr>
                 </tbody></table>
             </div>
         </div>
+
         <div class="wpio-card">
             <div class="wpio-card-head"><div><h2>🐛 Troubleshooting</h2></div></div>
             <div class="wpio-card-body">
@@ -669,6 +699,7 @@ class WPIO_Admin {
         $q     = WPIO_Queue::get_progress();
         $p     = $q['progress'];
         $pct   = $stats['total'] > 0 ? round( ($stats['converted'] / $stats['total']) * 100 ) : 0;
+        $running = $q['running'];
         ?>
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
@@ -687,12 +718,16 @@ class WPIO_Admin {
                 <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span>Nginx detected. See <a href="<?php echo esc_url(admin_url('upload.php?page=wp-image-optimizer&tab=delivery'));?>">Delivery tab</a>.</span></div>
                 <?php endif; ?>
                 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                    <button id="wpio-bulk-start" class="wpio-btn wpio-btn-primary wpio-btn-lg" <?php echo $q['running']?'disabled':''; ?>>
-                        <span>⚡</span> <?php echo $q['running'] ? 'Running&hellip;' : 'Start Bulk Convert'; ?>
+                    <button id="wpio-bulk-start" class="wpio-btn wpio-btn-primary wpio-btn-lg" <?php echo $running ? 'disabled' : ''; ?>>
+                        <span>⚡</span> <?php echo $running ? 'Running&hellip;' : 'Start Bulk Convert'; ?>
                     </button>
-                    <button id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger" style="<?php echo $q['running']?'':'display:none;'; ?>">✕ Cancel</button>
+                    <?php if ( $running ) : ?>
+                    <button id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger">✕ Cancel</button>
+                    <?php else : ?>
+                    <button id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger" style="display:none;">✕ Cancel</button>
+                    <?php endif; ?>
                 </div>
-                <div id="wpio-live-progress" style="<?php echo $q['running']?'':'display:none;'; ?>">
+                <div id="wpio-live-progress" style="<?php echo $running ? '' : 'display:none;'; ?>">
                     <div class="wpio-progress-wrap" style="margin-top:16px;">
                         <div class="wpio-progress-bar" id="wpio-prog-bar" style="width:<?php echo esc_attr($p['total']>0?round($p['done']/$p['total']*100):0); ?>%;">
                             <?php echo $p['total']>0 ? round($p['done']/$p['total']*100) : 0; ?>%
@@ -758,16 +793,9 @@ class WPIO_Admin {
                         <li><a href="<?php echo esc_url(admin_url('upload.php?page=wp-image-optimizer&tab=system'));?>">🖥️ System Status</a></li>
                         <li><a href="<?php echo esc_url(admin_url('upload.php?page=wp-image-optimizer&tab=delivery'));?>">🔀 Delivery / Nginx Config</a></li>
                         <li><a href="<?php echo esc_url(admin_url('upload.php?page=wp-image-optimizer&tab=advanced'));?>#wpio-folders">📁 Manage Folders</a></li>
+                        <li><a href="<?php echo esc_url(admin_url('upload.php?page=wp-image-optimizer&tab=help'));?>#wpio-restore">🔁 Restore Original Images</a></li>
                         <li><a href="https://github.com/wisnuub/wp-image-optimizer" target="_blank">⭐ GitHub Repository</a></li>
                     </ul>
-                </div>
-            </div>
-            <div class="wpio-card">
-                <div class="wpio-card-head"><div><h2>🖼️ Banner image</h2></div></div>
-                <div class="wpio-card-body" style="font-size:12.5px;color:#666;">
-                    <p style="margin:0 0 8px;">Replace the banner with your own image:</p>
-                    <code style="display:block;background:#f5f5f5;padding:10px;border-radius:6px;font-size:11.5px;line-height:1.6;">add_filter( 'wpio_banner_image_url', function() {<br>&nbsp;&nbsp;return get_template_directory_uri() . '/images/wpio-banner.jpg';<br>} );</code>
-                    <p style="margin:8px 0 0;color:#aaa;">Recommended: 980×100px JPG or WebP.</p>
                 </div>
             </div>
         </div>

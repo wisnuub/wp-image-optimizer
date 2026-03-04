@@ -49,6 +49,33 @@ class WPIO_Converter {
         return new WP_Error( 'no_library', 'Neither GD nor Imagick is available.' );
     }
 
+    /**
+     * Check if the converted file is genuinely smaller than the source.
+     * Returns true when the conversion should be kept, false if it should be discarded.
+     */
+    private static function is_size_acceptable( $src, $dest ) {
+        if ( ! file_exists( $dest ) ) return false;
+        $src_size  = filesize( $src );
+        $dest_size = filesize( $dest );
+        // Converted file must be strictly smaller than the original.
+        return $dest_size < $src_size;
+    }
+
+    private static function discard_if_larger( $src, $dest ) {
+        if ( ! self::is_size_acceptable( $src, $dest ) ) {
+            @unlink( $dest );
+            return new WP_Error(
+                'output_larger',
+                sprintf(
+                    'Converted file (%s) is not smaller than original (%s) — skipped to preserve quality.',
+                    size_format( filesize( $dest ) ),
+                    size_format( filesize( $src ) )
+                )
+            );
+        }
+        return null;
+    }
+
     private static function convert_gd( $src, $dest, $format, $quality ) {
         $ext = strtolower( pathinfo( $src, PATHINFO_EXTENSION ) );
         switch ( $ext ) {
@@ -74,11 +101,9 @@ class WPIO_Converter {
         imagedestroy( $image );
         if ( ! $result ) return new WP_Error( 'gd_convert_failed', 'GD conversion failed for: ' . basename( $src ) );
 
-        // Remove if output is larger than source
-        if ( get_option( 'wpio_remove_if_larger', '1' ) === '1' && file_exists( $dest ) && filesize( $dest ) >= filesize( $src ) ) {
-            unlink( $dest );
-            return new WP_Error( 'output_larger', 'Converted file was larger than original — skipped.' );
-        }
+        // Always discard the converted file if it is not smaller than the source.
+        $size_check = self::discard_if_larger( $src, $dest );
+        if ( is_wp_error( $size_check ) ) return $size_check;
 
         return $dest;
     }
@@ -107,11 +132,9 @@ class WPIO_Converter {
             $im->clear();
             $im->destroy();
 
-            // Remove if output is larger than source
-            if ( get_option( 'wpio_remove_if_larger', '1' ) === '1' && file_exists( $dest ) && filesize( $dest ) >= filesize( $src ) ) {
-                unlink( $dest );
-                return new WP_Error( 'output_larger', 'Converted file was larger than original — skipped.' );
-            }
+            // Always discard the converted file if it is not smaller than the source.
+            $size_check = self::discard_if_larger( $src, $dest );
+            if ( is_wp_error( $size_check ) ) return $size_check;
 
             return $dest;
         } catch ( Exception $e ) {

@@ -35,11 +35,33 @@ class WPIO_Folder_Scanner {
     }
 
     public static function get_folders() {
-        $upload_dir = wp_upload_dir();
-        $default    = $upload_dir['basedir'];
-        $custom_raw = get_option( 'wpio_custom_folders', '' );
-        $folders    = array( $default );
+        $upload_dir  = wp_upload_dir();
+        $content_dir = WP_CONTENT_DIR;
+        $folders     = array();
 
+        // Uploads
+        if ( get_option( 'wpio_scan_uploads', '1' ) === '1' ) {
+            $folders[] = $upload_dir['basedir'];
+        }
+
+        // Plugins
+        if ( get_option( 'wpio_scan_plugins', '0' ) === '1' ) {
+            $plugins_dir = $content_dir . '/plugins';
+            if ( is_dir( $plugins_dir ) ) {
+                $folders[] = $plugins_dir;
+            }
+        }
+
+        // Themes
+        if ( get_option( 'wpio_scan_themes', '0' ) === '1' ) {
+            $themes_dir = $content_dir . '/themes';
+            if ( is_dir( $themes_dir ) ) {
+                $folders[] = $themes_dir;
+            }
+        }
+
+        // Custom additional folders
+        $custom_raw = get_option( 'wpio_custom_folders', '' );
         if ( ! empty( $custom_raw ) ) {
             $lines = array_filter( array_map( 'trim', explode( "\n", $custom_raw ) ) );
             foreach ( $lines as $line ) {
@@ -51,6 +73,11 @@ class WPIO_Folder_Scanner {
                     $folders[] = $real;
                 }
             }
+        }
+
+        // Always return at least uploads as fallback
+        if ( empty( $folders ) ) {
+            $folders[] = $upload_dir['basedir'];
         }
 
         return $folders;
