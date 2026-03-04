@@ -18,18 +18,13 @@ class WPIO_Folder_Scanner {
         return array_unique( $parts );
     }
 
-    /**
-     * Public wrapper so WPIO_Folder_Tree can call it.
-     */
     public static function is_excluded_path( $path ) {
         return self::is_excluded( $path );
     }
 
     private static function is_excluded( $path ) {
         foreach ( self::get_excluded_dirs() as $fragment ) {
-            if ( $fragment !== '' && strpos( $path, $fragment ) !== false ) {
-                return true;
-            }
+            if ( $fragment !== '' && strpos( $path, $fragment ) !== false ) return true;
         }
         return false;
     }
@@ -39,48 +34,79 @@ class WPIO_Folder_Scanner {
         $content_dir = WP_CONTENT_DIR;
         $folders     = array();
 
-        // Uploads
         if ( get_option( 'wpio_scan_uploads', '1' ) === '1' ) {
             $folders[] = $upload_dir['basedir'];
         }
-
-        // Plugins
         if ( get_option( 'wpio_scan_plugins', '0' ) === '1' ) {
-            $plugins_dir = $content_dir . '/plugins';
-            if ( is_dir( $plugins_dir ) ) {
-                $folders[] = $plugins_dir;
-            }
+            $d = $content_dir . '/plugins';
+            if ( is_dir( $d ) ) $folders[] = $d;
         }
-
-        // Themes
         if ( get_option( 'wpio_scan_themes', '0' ) === '1' ) {
-            $themes_dir = $content_dir . '/themes';
-            if ( is_dir( $themes_dir ) ) {
-                $folders[] = $themes_dir;
-            }
+            $d = $content_dir . '/themes';
+            if ( is_dir( $d ) ) $folders[] = $d;
         }
 
-        // Custom additional folders
         $custom_raw = get_option( 'wpio_custom_folders', '' );
         if ( ! empty( $custom_raw ) ) {
-            $lines = array_filter( array_map( 'trim', explode( "\n", $custom_raw ) ) );
-            foreach ( $lines as $line ) {
-                if ( ! path_is_absolute( $line ) ) {
-                    $line = rtrim( ABSPATH, '/' ) . '/' . ltrim( $line, '/' );
-                }
+            foreach ( array_filter( array_map( 'trim', explode( "\n", $custom_raw ) ) ) as $line ) {
+                if ( ! path_is_absolute( $line ) ) $line = rtrim( ABSPATH, '/' ) . '/' . ltrim( $line, '/' );
                 $real = realpath( $line );
-                if ( $real && is_dir( $real ) && ! in_array( $real, $folders ) ) {
-                    $folders[] = $real;
-                }
+                if ( $real && is_dir( $real ) && ! in_array( $real, $folders ) ) $folders[] = $real;
             }
         }
 
-        // Always return at least uploads as fallback
-        if ( empty( $folders ) ) {
-            $folders[] = $upload_dir['basedir'];
+        if ( empty( $folders ) ) $folders[] = $upload_dir['basedir'];
+        return $folders;
+    }
+
+    /**
+     * Returns per-source image counts including thumbnail breakdown.
+     * Result shape:
+     *   [ 'uploads' => ['total'=>N,'thumbs'=>N], 'plugins'=>..., 'themes'=>... ]
+     */
+    public static function get_counts_by_source() {
+        $upload_dir  = wp_upload_dir();
+        $content_dir = WP_CONTENT_DIR;
+        $allowed     = self::get_allowed_extensions();
+
+        $sources = array();
+
+        if ( get_option( 'wpio_scan_uploads', '1' ) === '1' ) {
+            $dir = $upload_dir['basedir'];
+            if ( is_dir( $dir ) ) $sources['uploads'] = $dir;
+        }
+        if ( get_option( 'wpio_scan_plugins', '0' ) === '1' ) {
+            $dir = $content_dir . '/plugins';
+            if ( is_dir( $dir ) ) $sources['plugins'] = $dir;
+        }
+        if ( get_option( 'wpio_scan_themes', '0' ) === '1' ) {
+            $dir = $content_dir . '/themes';
+            if ( is_dir( $dir ) ) $sources['themes'] = $dir;
         }
 
-        return $folders;
+        $result = array();
+        foreach ( $sources as $label => $dir ) {
+            $total  = 0;
+            $thumbs = 0;
+            $iter   = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator( $dir, RecursiveDirectoryIterator::SKIP_DOTS )
+            );
+            foreach ( $iter as $file ) {
+                if ( $file->isDir() ) continue;
+                $path = $file->getPathname();
+                if ( self::is_excluded( $path ) ) continue;
+                $ext = strtolower( $file->getExtension() );
+                if ( ! in_array( $ext, $allowed ) ) continue;
+                $total++;
+                // WP thumbnail pattern: filename-NNNxNNN.ext
+                if ( preg_match( '/-\d+x\d+\.(?:jpe?g|png|gif)$/i', $file->getBasename() ) ) {
+                    $thumbs++;
+                }
+            }
+            $result[ $label ] = array( 'total' => $total, 'thumbs' => $thumbs );
+        }
+
+        return $result;
     }
 
     public static function get_pending_images( $format = 'webp' ) {

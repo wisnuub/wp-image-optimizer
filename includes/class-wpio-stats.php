@@ -17,6 +17,7 @@ class WPIO_Stats {
         $folders     = WPIO_Folder_Scanner::get_folders();
         $total       = 0;
         $converted   = 0;
+        $restored    = 0;
         $orig_bytes  = 0;
         $conv_bytes  = 0;
         $largest     = array( 'file' => '', 'saved' => 0, 'pct' => 0 );
@@ -36,6 +37,7 @@ class WPIO_Stats {
                 $orig_size   = $file->getSize();
                 $orig_bytes += $orig_size;
                 $conv_path   = preg_replace( '/\.(jpe?g|png)$/i', '.' . $format, $path );
+
                 if ( file_exists( $conv_path ) ) {
                     $converted++;
                     $c_size      = filesize( $conv_path );
@@ -50,6 +52,10 @@ class WPIO_Stats {
                     }
                 } else {
                     $conv_bytes += $orig_size;
+                    // Count as "restored" if a backup exists (was once converted, now reverted).
+                    if ( WPIO_Backup::has_backup( $path ) ) {
+                        $restored++;
+                    }
                 }
             }
         }
@@ -61,6 +67,7 @@ class WPIO_Stats {
             'total'        => $total,
             'converted'    => $converted,
             'pending'      => $total - $converted,
+            'restored'     => $restored,
             'orig_bytes'   => $orig_bytes,
             'saved_bytes'  => $saved_bytes,
             'saved_kb'     => round( $saved_bytes / 1024, 1 ),
