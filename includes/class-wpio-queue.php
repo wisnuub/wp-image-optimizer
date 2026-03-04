@@ -78,11 +78,30 @@ class WPIO_Queue {
         $quality    = (int) get_option( 'wpio_quality', 82 );
         $use_remote = WPIO_Remote::is_enabled();
 
+        // Security: resolve allowed base directories once to validate each queued path.
+        $allowed_bases = array_map( 'realpath', WPIO_Folder_Scanner::get_folders() );
+        $allowed_bases = array_filter( $allowed_bases );
+
         self::raise_limits();
 
         $chunk = array_splice( $queue, 0, $batch_size );
 
         foreach ( $chunk as $file ) {
+            // Security: ensure the file path still falls within an allowed folder
+            // before processing — guards against option poisoning attacks.
+            $real_file = realpath( $file );
+            $allowed   = false;
+            foreach ( $allowed_bases as $base ) {
+                if ( strpos( $real_file . DIRECTORY_SEPARATOR, $base . DIRECTORY_SEPARATOR ) === 0 ) {
+                    $allowed = true;
+                    break;
+                }
+            }
+            if ( ! $real_file || ! $allowed ) {
+                $progress['errors']++;
+                continue;
+            }
+
             // Backup original if enabled
             if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
                 WPIO_Backup::backup( $file );
