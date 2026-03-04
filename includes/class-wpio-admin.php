@@ -48,27 +48,28 @@ class WPIO_Admin {
     /* -- Settings ------------------------------------- */
     public function register_settings() {
         $defaults = array(
-            'wpio_format'           => 'webp',
-            'wpio_quality'          => 82,
-            'wpio_ext_jpg'          => '1',
-            'wpio_ext_png'          => '1',
-            'wpio_ext_gif'          => '0',
-            'wpio_excluded_dirs'    => '',
-            'wpio_auto_convert'     => '1',
-            'wpio_backup_enabled'   => '1',
-            'wpio_strip_exif'       => '1',
-            'wpio_remove_if_larger' => '1',
-            'wpio_resize_mode'      => 'none',
-            'wpio_max_dimension'    => 0,
-            'wpio_max_width'        => 0,
-            'wpio_batch_size'       => 5,
-            'wpio_sleep_time'       => 500,
-            'wpio_memory_limit'     => '256M',
-            'wpio_exec_time'        => 120,
-            'wpio_custom_folders'   => '',
-            'wpio_use_remote'       => '0',
-            'wpio_remote_url'       => '',
-            'wpio_remote_token'     => '',
+            'wpio_format'             => 'webp',
+            'wpio_quality'            => 82,
+            'wpio_ext_jpg'            => '1',
+            'wpio_ext_png'            => '1',
+            'wpio_ext_gif'            => '0',
+            'wpio_excluded_dirs'      => '',
+            'wpio_conversion_method'  => 'auto',
+            'wpio_auto_convert'       => '1',
+            'wpio_backup_enabled'     => '1',
+            'wpio_strip_exif'         => '1',
+            'wpio_remove_if_larger'   => '1',
+            'wpio_resize_mode'        => 'none',
+            'wpio_max_dimension'      => 0,
+            'wpio_max_width'          => 0,
+            'wpio_batch_size'         => 5,
+            'wpio_sleep_time'         => 500,
+            'wpio_memory_limit'       => '256M',
+            'wpio_exec_time'          => 120,
+            'wpio_custom_folders'     => '',
+            'wpio_use_remote'         => '0',
+            'wpio_remote_url'         => '',
+            'wpio_remote_token'       => '',
         );
         foreach ( $defaults as $key => $default ) {
             register_setting( 'wpio_settings', $key, array( 'default' => $default ) );
@@ -231,7 +232,7 @@ class WPIO_Admin {
                 </div>
                 <div class="wpio-alert info" style="margin-top:16px;">
                     <span class="wpio-alert-icon">ℹ️</span>
-                    <span>Image URLs never change. The server (via .htaccess or Nginx) decides which file to serve based on the browser's <code>Accept</code> header. Verify in DevTools → Network → Response Headers.</span>
+                    <span>Image URLs never change. The server (via .htaccess or Nginx) decides which file to serve based on the browser's <code>Accept</code> header.</span>
                 </div>
             </div>
         </div>
@@ -274,22 +275,25 @@ class WPIO_Admin {
     ================================================ */
     private function tab_advanced() {
         $o = array(
-            'ext_jpg'        => get_option( 'wpio_ext_jpg', '1' ),
-            'ext_png'        => get_option( 'wpio_ext_png', '1' ),
-            'ext_gif'        => get_option( 'wpio_ext_gif', '0' ),
-            'excluded_dirs'  => get_option( 'wpio_excluded_dirs', '' ),
-            'strip_exif'     => get_option( 'wpio_strip_exif', '1' ),
-            'remove_larger'  => get_option( 'wpio_remove_if_larger', '1' ),
-            'resize_mode'    => get_option( 'wpio_resize_mode', 'none' ),
-            'max_dimension'  => get_option( 'wpio_max_dimension', 0 ),
-            'max_width'      => get_option( 'wpio_max_width', 0 ),
-            'batch_size'     => get_option( 'wpio_batch_size', 5 ),
-            'sleep_time'     => get_option( 'wpio_sleep_time', 500 ),
-            'memory_limit'   => get_option( 'wpio_memory_limit', '256M' ),
-            'exec_time'      => get_option( 'wpio_exec_time', 120 ),
-            'custom_folders' => get_option( 'wpio_custom_folders', '' ),
+            'ext_jpg'           => get_option( 'wpio_ext_jpg', '1' ),
+            'ext_png'           => get_option( 'wpio_ext_png', '1' ),
+            'ext_gif'           => get_option( 'wpio_ext_gif', '0' ),
+            'excluded_dirs'     => get_option( 'wpio_excluded_dirs', '' ),
+            'conversion_method' => get_option( 'wpio_conversion_method', 'auto' ),
+            'strip_exif'        => get_option( 'wpio_strip_exif', '1' ),
+            'remove_larger'     => get_option( 'wpio_remove_if_larger', '1' ),
+            'resize_mode'       => get_option( 'wpio_resize_mode', 'none' ),
+            'max_dimension'     => get_option( 'wpio_max_dimension', 0 ),
+            'max_width'         => get_option( 'wpio_max_width', 0 ),
+            'batch_size'        => get_option( 'wpio_batch_size', 5 ),
+            'sleep_time'        => get_option( 'wpio_sleep_time', 500 ),
+            'memory_limit'      => get_option( 'wpio_memory_limit', '256M' ),
+            'exec_time'         => get_option( 'wpio_exec_time', 120 ),
+            'custom_folders'    => get_option( 'wpio_custom_folders', '' ),
         );
-        // Build preview of excluded dirs
+
+        $has_imagick = extension_loaded( 'imagick' );
+        $has_gd      = extension_loaded( 'gd' );
         $excluded_preview = WPIO_Folder_Scanner::get_excluded_dirs();
         ?>
         <div class="wpio-layout full">
@@ -354,7 +358,7 @@ class WPIO_Admin {
                                value="<?php echo esc_attr( $o['excluded_dirs'] ); ?>"
                                placeholder="cache, backup-plugin, elementor/css"
                                style="max-width:420px;" />
-                        <div class="desc">Example: <code>cache, .git, node_modules, backup-plugin</code><br>Any file whose path contains one of these strings will be skipped.</div>
+                        <div class="desc">Example: <code>cache, .git, node_modules</code> — any file path containing one of these strings will be skipped.</div>
                     </div>
                 </div>
                 <?php if ( ! empty( $excluded_preview ) ) : ?>
@@ -365,6 +369,69 @@ class WPIO_Admin {
                         <code style="background:#fff0f4;color:#FF2462;border:1px solid #ffc2d4;padding:2px 10px;border-radius:20px;font-size:12px;"><?php echo esc_html( $fragment ); ?></code>
                         <?php endforeach; ?>
                     </div>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- T3: Conversion method -->
+        <div class="wpio-card">
+            <div class="wpio-card-head"><div>
+                <h2>⚙️ Conversion method</h2>
+                <p>Choose which PHP image library handles the conversion. Auto is recommended for most setups.</p>
+            </div></div>
+            <div class="wpio-card-body">
+                <div class="wpio-method-grid">
+
+                    <!-- Auto -->
+                    <label class="wpio-method-card <?php echo $o['conversion_method'] === 'auto' ? 'selected' : ''; ?>">
+                        <input type="radio" name="wpio_conversion_method" value="auto" <?php checked( $o['conversion_method'], 'auto' ); ?> />
+                        <div class="wpio-method-dot"></div>
+                        <div class="wpio-method-icon">🤖</div>
+                        <div class="wpio-method-name">Auto</div>
+                        <div class="wpio-method-desc">Use Imagick if available, fall back to GD automatically.</div>
+                        <div class="wpio-method-status">
+                            <span class="wpio-pill ok">✓ Recommended</span>
+                        </div>
+                    </label>
+
+                    <!-- Imagick -->
+                    <label class="wpio-method-card <?php echo $o['conversion_method'] === 'imagick' ? 'selected' : ''; ?> <?php echo ! $has_imagick ? 'disabled' : ''; ?>">
+                        <input type="radio" name="wpio_conversion_method" value="imagick" <?php checked( $o['conversion_method'], 'imagick' ); ?> <?php disabled( ! $has_imagick ); ?> />
+                        <div class="wpio-method-dot"></div>
+                        <div class="wpio-method-icon">🔮</div>
+                        <div class="wpio-method-name">Imagick</div>
+                        <div class="wpio-method-desc">Best quality &amp; AVIF support. Requires the <code>imagick</code> PHP extension.</div>
+                        <div class="wpio-method-status">
+                            <?php if ( $has_imagick ) : ?>
+                                <span class="wpio-pill ok">✓ Available</span>
+                            <?php else : ?>
+                                <span class="wpio-pill err">✗ Not installed</span>
+                            <?php endif; ?>
+                        </div>
+                    </label>
+
+                    <!-- GD -->
+                    <label class="wpio-method-card <?php echo $o['conversion_method'] === 'gd' ? 'selected' : ''; ?> <?php echo ! $has_gd ? 'disabled' : ''; ?>">
+                        <input type="radio" name="wpio_conversion_method" value="gd" <?php checked( $o['conversion_method'], 'gd' ); ?> <?php disabled( ! $has_gd ); ?> />
+                        <div class="wpio-method-dot"></div>
+                        <div class="wpio-method-icon">🎨</div>
+                        <div class="wpio-method-name">GD</div>
+                        <div class="wpio-method-desc">Lightweight, built into most PHP installs. WebP support requires PHP 5.5+.</div>
+                        <div class="wpio-method-status">
+                            <?php if ( $has_gd ) : ?>
+                                <span class="wpio-pill ok">✓ Available</span>
+                            <?php else : ?>
+                                <span class="wpio-pill err">✗ Not installed</span>
+                            <?php endif; ?>
+                        </div>
+                    </label>
+
+                </div>
+                <?php if ( ! $has_imagick && ! $has_gd ) : ?>
+                <div class="wpio-alert warn" style="margin-top:12px;">
+                    <span class="wpio-alert-icon">⚠️</span>
+                    <span>Neither Imagick nor GD is available on this server. Conversion will fail until one is installed. Contact your host.</span>
                 </div>
                 <?php endif; ?>
             </div>
@@ -407,7 +474,7 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>🏷️ Extra features</h2>
-                <p>Additional options that increase plugin capabilities.</p>
+                <p>Additional options that fine-tune conversion behaviour.</p>
             </div></div>
             <div class="wpio-card-body">
                 <div class="wpio-toggle-row">
@@ -607,10 +674,12 @@ class WPIO_Admin {
                     $ts  = wp_next_scheduled( WPIO_Queue::CRON_HOOK );
                     $ext = WPIO_Folder_Scanner::get_allowed_extensions();
                     $exc = WPIO_Folder_Scanner::get_excluded_dirs();
+                    $method = get_option( 'wpio_conversion_method', 'auto' );
                     $rows = array(
                         array( 'WordPress Version',   get_bloginfo('version') ),
                         array( 'Plugin Version',      WPIO_VERSION ),
                         array( 'Active Format',       strtoupper( get_option('wpio_format','webp') ) ),
+                        array( 'Conversion Method',   ucfirst( $method ) . ( $method === 'auto' ? ' (Imagick → GD)' : '' ) ),
                         array( 'Scanning Extensions', implode( ', ', array_map( 'strtoupper', $ext ) ) ),
                         array( 'Excluded Fragments',  ! empty( $exc ) ? implode( ', ', $exc ) : 'none' ),
                         array( 'Scanned Folders',     count( WPIO_Folder_Scanner::get_folders() ) ),
@@ -642,7 +711,7 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div><h2>❓ How does the plugin work?</h2></div></div>
             <div class="wpio-card-body">
-                <p>When a browser requests an image, the plugin checks if an optimized version (WebP or AVIF) exists. If so, and the browser supports that format, the optimized file is served. If not, the original is served. <strong>Image URLs never change</strong>, so there are no caching issues.</p>
+                <p>When a browser requests an image, the plugin checks if an optimized version (WebP or AVIF) exists. If so, and the browser supports that format, the optimized file is served. <strong>Image URLs never change</strong>, so there are no caching issues.</p>
                 <p>Conversion happens automatically on upload, or in bulk via the <strong>General Settings</strong> tab. A background WP-Cron task continues converting even if you close the admin page.</p>
             </div>
         </div>
