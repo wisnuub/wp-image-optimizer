@@ -84,6 +84,12 @@ class WPIO_Remote {
             return new WP_Error( 'remote_bad_image', 'Remote server returned invalid image data.' );
         }
 
+        // Security: validate the decoded data is actually an image before writing to disk.
+        $image_info = @getimagesizefromstring( $decoded );
+        if ( ! $image_info || strpos( $image_info['mime'], 'image/' ) !== 0 ) {
+            return new WP_Error( 'remote_invalid_mime', 'Remote server response is not a valid image — write aborted.' );
+        }
+
         if ( file_put_contents( $dest_path, $decoded ) === false ) {
             return new WP_Error( 'write_failed', 'Could not write converted file to disk.' );
         }
