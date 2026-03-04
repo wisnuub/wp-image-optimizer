@@ -37,6 +37,7 @@ class WPIO_Admin {
             'nonceStart'      => wp_create_nonce( 'wpio_queue_start' ),
             'nonceChunk'      => wp_create_nonce( 'wpio_chunk' ),
             'nonceCancel'     => wp_create_nonce( 'wpio_queue_cancel' ),
+            'nonceProgress'   => wp_create_nonce( 'wpio_queue_progress' ),
             'nonceFolderTree' => wp_create_nonce( 'wpio_folder_tree' ),
         ) );
     }
@@ -889,7 +890,10 @@ class WPIO_Admin {
         WPIO_Queue::cancel(); wp_send_json_success();
     }
     public function ajax_queue_progress() {
-        if ( ! current_user_can('manage_options') ) wp_send_json_error('Unauthorized');
+        // Security: verify nonce and capability — consistent with all other AJAX handlers.
+        if ( ! check_ajax_referer( 'wpio_queue_progress', '_wpnonce', false ) || ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Unauthorized' );
+        }
         wp_send_json_success( WPIO_Queue::get_progress() );
     }
     public function ajax_folder_tree() {
