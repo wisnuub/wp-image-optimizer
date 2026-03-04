@@ -29,6 +29,17 @@ class WPIO_Folder_Scanner {
         return false;
     }
 
+    /**
+     * Returns the resolved ABSPATH boundary used to validate custom folders.
+     */
+    private static function abspath_real() {
+        static $abspath = null;
+        if ( $abspath === null ) {
+            $abspath = realpath( ABSPATH );
+        }
+        return $abspath;
+    }
+
     public static function get_folders() {
         $upload_dir  = wp_upload_dir();
         $content_dir = WP_CONTENT_DIR;
@@ -48,10 +59,20 @@ class WPIO_Folder_Scanner {
 
         $custom_raw = get_option( 'wpio_custom_folders', '' );
         if ( ! empty( $custom_raw ) ) {
+            $abspath_real = self::abspath_real();
             foreach ( array_filter( array_map( 'trim', explode( "\n", $custom_raw ) ) ) as $line ) {
                 if ( ! path_is_absolute( $line ) ) $line = rtrim( ABSPATH, '/' ) . '/' . ltrim( $line, '/' );
                 $real = realpath( $line );
-                if ( $real && is_dir( $real ) && ! in_array( $real, $folders ) ) $folders[] = $real;
+                // Security: only allow paths within ABSPATH to prevent path traversal.
+                if (
+                    $real &&
+                    is_dir( $real ) &&
+                    $abspath_real &&
+                    strpos( $real . DIRECTORY_SEPARATOR, $abspath_real . DIRECTORY_SEPARATOR ) === 0 &&
+                    ! in_array( $real, $folders )
+                ) {
+                    $folders[] = $real;
+                }
             }
         }
 
