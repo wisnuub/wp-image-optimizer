@@ -165,12 +165,15 @@
   margin-bottom: 20px;
 }
 .wpio-format-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   border: 2px solid var(--wpio-border);
   border-radius: 8px;
   padding: 16px 14px;
   cursor: pointer;
   transition: border-color .15s, box-shadow .15s;
-  text-align: center;
   position: relative;
   background: #fafafa;
 }
@@ -194,6 +197,7 @@
   margin: 0 auto 10px;
   background: #fff;
   transition: background .15s, border-color .15s;
+  flex-shrink: 0;
 }
 .wpio-format-card.selected .wpio-format-dot {
   background: var(--wpio-accent);
@@ -204,6 +208,7 @@
   font-weight: 700;
   color: var(--wpio-text);
   margin-bottom: 6px;
+  text-align: center;
 }
 .wpio-format-table {
   width: 100%;
@@ -227,6 +232,7 @@
   vertical-align: top;
   line-height: 1.4;
   color: #444;
+  text-align: left;
 }
 
 /* ── Conversion Method Grid ──────────────────── */

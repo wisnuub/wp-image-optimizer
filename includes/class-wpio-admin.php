@@ -37,7 +37,6 @@ class WPIO_Admin {
             'nonceStart'      => wp_create_nonce( 'wpio_queue_start' ),
             'nonceChunk'      => wp_create_nonce( 'wpio_chunk' ),
             'nonceCancel'     => wp_create_nonce( 'wpio_queue_cancel' ),
-            'nonceProgress'   => wp_create_nonce( 'wpio_queue_progress' ),
             'nonceFolderTree' => wp_create_nonce( 'wpio_folder_tree' ),
         ) );
     }
@@ -185,7 +184,7 @@ class WPIO_Admin {
                     <div class="wpio-format-card <?php echo $format === 'avif' ? 'selected' : ''; ?>" data-format="avif">
                         <input type="radio" name="_wpio_format_ui" value="avif" <?php checked( $format, 'avif' ); ?> />
                         <div class="wpio-format-dot"></div>
-                        <div class="wpio-format-name">AVIF <span class="wpio-experimental-badge">Experimental</span></div>
+                        <div class="wpio-format-name">AVIF</div>
                         <table class="wpio-format-table">
                             <tr><th>File size</th></tr><tr><td>~50% smaller than JPEG</td></tr>
                             <tr><th>Quality</th></tr><tr><td>Highest quality (AV1 codec)</td></tr>
@@ -195,7 +194,7 @@ class WPIO_Admin {
                     <div class="wpio-format-card <?php echo $format === 'both' ? 'selected' : ''; ?>" data-format="both">
                         <input type="radio" name="_wpio_format_ui" value="both" <?php checked( $format, 'both' ); ?> />
                         <div class="wpio-format-dot"></div>
-                        <div class="wpio-format-name">AVIF + WebP <span class="wpio-experimental-badge">Experimental</span></div>
+                        <div class="wpio-format-name">AVIF + WebP</div>
                         <table class="wpio-format-table">
                             <tr><th>File size</th></tr><tr><td>Best of both formats</td></tr>
                             <tr><th>Quality</th></tr><tr><td>Browser picks best</td></tr>
@@ -890,10 +889,7 @@ class WPIO_Admin {
         WPIO_Queue::cancel(); wp_send_json_success();
     }
     public function ajax_queue_progress() {
-        // Security: verify nonce and capability — consistent with all other AJAX handlers.
-        if ( ! check_ajax_referer( 'wpio_queue_progress', '_wpnonce', false ) || ! current_user_can( 'manage_options' ) ) {
-            wp_send_json_error( 'Unauthorized' );
-        }
+        if ( ! current_user_can('manage_options') ) wp_send_json_error('Unauthorized');
         wp_send_json_success( WPIO_Queue::get_progress() );
     }
     public function ajax_folder_tree() {
