@@ -210,8 +210,17 @@ class WPIO_Rewrite {
        Helpers
     ------------------------------------------------------- */
 
+    /**
+     * Returns the path to the root .htaccess file.
+     *
+     * Using ABSPATH (site root) instead of uploads/.htaccess so that rules
+     * work reliably on all Apache/LiteSpeed setups. Many hardened servers
+     * (and security plugins like Wordfence) block .htaccess execution inside
+     * /uploads/ specifically to prevent malicious upload exploits — which
+     * would silently break our rewrite rules if placed there.
+     */
     private static function htaccess_path() {
-        return wp_upload_dir()['basedir'] . '/.htaccess';
+        return rtrim( ABSPATH, '/' ) . '/.htaccess';
     }
 
     public static function build_rules( $format = 'webp' ) {
