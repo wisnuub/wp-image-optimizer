@@ -61,6 +61,7 @@ class WPIO_Admin {
             'wpio_backup_enabled'     => '1',
             'wpio_strip_exif'         => '1',
             'wpio_remove_if_larger'   => '1',
+            'wpio_resize_enabled'     => '0',
             'wpio_max_width'          => 0,
             'wpio_max_height'         => 0,
             'wpio_batch_size'         => 5,
@@ -235,7 +236,7 @@ class WPIO_Admin {
                     </div>
                 </div>
                 <div class="wpio-alert info" style="margin-top:16px;">
-                    <span class="wpio-alert-icon">&#x2139;&#xFE0F;</span>
+                    <span class="wpio-alert-icon">ℹ️</span>
                     <span>Image URLs never change. The server (via .htaccess or Nginx) decides which file to serve based on the browser's <code>Accept</code> header.</span>
                 </div>
             </div>
@@ -286,6 +287,7 @@ class WPIO_Admin {
             'conversion_method' => get_option( 'wpio_conversion_method', 'auto' ),
             'strip_exif'        => get_option( 'wpio_strip_exif', '1' ),
             'remove_larger'     => get_option( 'wpio_remove_if_larger', '1' ),
+            'resize_enabled'    => get_option( 'wpio_resize_enabled', '0' ),
             'max_width'         => (int) get_option( 'wpio_max_width', 0 ),
             'max_height'        => (int) get_option( 'wpio_max_height', 0 ),
             'batch_size'        => get_option( 'wpio_batch_size', 5 ),
@@ -324,7 +326,7 @@ class WPIO_Admin {
                     <div class="label">.gif<small>Static GIFs only — animated GIFs will be skipped automatically</small></div>
                     <label class="wpio-toggle"><input type="checkbox" name="wpio_ext_gif" value="1" <?php checked($o['ext_gif'],'1'); ?> /><span class="wpio-toggle-slider"></span></label>
                 </div>
-                <div class="wpio-alert info" style="margin-top:4px;"><span class="wpio-alert-icon">&#x2139;&#xFE0F;</span><span>If all are disabled, JPG and PNG will be used as a safe fallback.</span></div>
+                <div class="wpio-alert info" style="margin-top:4px;"><span class="wpio-alert-icon">ℹ️</span><span>If all are disabled, JPG and PNG will be used as a safe fallback.</span></div>
             </div>
         </div>
 
@@ -353,7 +355,7 @@ class WPIO_Admin {
                     </div>
                     <label class="wpio-toggle"><input type="checkbox" name="wpio_scan_themes" value="1" <?php checked($o['scan_themes'],'1'); ?> /><span class="wpio-toggle-slider"></span></label>
                 </div>
-                <div class="wpio-alert info" style="margin-top:8px;"><span class="wpio-alert-icon">&#x2139;&#xFE0F;</span><span>Scanning plugins or themes may take longer and affect read-only files. Make sure PHP has write access.</span></div>
+                <div class="wpio-alert info" style="margin-top:8px;"><span class="wpio-alert-icon">ℹ️</span><span>Scanning plugins or themes may take longer and affect read-only files. Make sure PHP has write access.</span></div>
             </div>
         </div>
 
@@ -427,21 +429,32 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div>
                 <h2>📐 Maximum image dimensions</h2>
-                <p>Resize large images to maximum dimensions in pixels during image conversion, keeping the original aspect ratio. Leave at 0 to disable resizing.</p>
+                <p>Resize large images to maximum dimensions in pixels during image conversion, keeping the original aspect ratio.</p>
             </div></div>
             <div class="wpio-card-body">
-                <div class="wpio-field-row">
-                    <div class="wpio-field-label">Max. width<small>0 = no limit</small></div>
-                    <div class="wpio-field-input">
-                        <input type="number" name="wpio_max_width" value="<?php echo esc_attr( $o['max_width'] ); ?>" min="0" max="9999" style="max-width:120px;" /> px
-                        <div class="desc">Images wider than this will be scaled down proportionally.</div>
+                <div class="wpio-toggle-row">
+                    <div class="label">Enable image resizing
+                        <small>Downscale images that exceed your max dimensions during conversion</small>
                     </div>
+                    <label class="wpio-toggle">
+                        <input type="checkbox" name="wpio_resize_enabled" id="wpio_resize_enabled" value="1" <?php checked($o['resize_enabled'],'1'); ?> />
+                        <span class="wpio-toggle-slider"></span>
+                    </label>
                 </div>
-                <div class="wpio-field-row">
-                    <div class="wpio-field-label">Max. height<small>0 = no limit</small></div>
-                    <div class="wpio-field-input">
-                        <input type="number" name="wpio_max_height" value="<?php echo esc_attr( $o['max_height'] ); ?>" min="0" max="9999" style="max-width:120px;" /> px
-                        <div class="desc">Images taller than this will be scaled down proportionally.</div>
+                <div id="wpio-resize-fields" style="<?php echo $o['resize_enabled'] === '1' ? '' : 'display:none;'; ?>">
+                    <div class="wpio-field-row">
+                        <div class="wpio-field-label">Max. width<small>0 = no limit</small></div>
+                        <div class="wpio-field-input">
+                            <input type="number" name="wpio_max_width" value="<?php echo esc_attr( $o['max_width'] ); ?>" min="0" max="9999" style="max-width:120px;" /> px
+                            <div class="desc">Images wider than this will be scaled down proportionally.</div>
+                        </div>
+                    </div>
+                    <div class="wpio-field-row">
+                        <div class="wpio-field-label">Max. height<small>0 = no limit</small></div>
+                        <div class="wpio-field-input">
+                            <input type="number" name="wpio_max_height" value="<?php echo esc_attr( $o['max_height'] ); ?>" min="0" max="9999" style="max-width:120px;" /> px
+                            <div class="desc">Images taller than this will be scaled down proportionally.</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -548,7 +561,7 @@ class WPIO_Admin {
         <div class="wpio-card">
             <div class="wpio-card-head"><div><h2>🔀 How image delivery works</h2></div></div>
             <div class="wpio-card-body">
-                <div class="wpio-alert info"><span class="wpio-alert-icon">&#x2139;&#xFE0F;</span><span>When a browser requests <code>photo.jpg</code>, the server checks if <code>photo.webp</code> exists and the browser supports it. If yes, the optimized file is served. <strong>No page caching issues</strong> — URLs never change.</span></div>
+                <div class="wpio-alert info"><span class="wpio-alert-icon">ℹ️</span><span>When a browser requests <code>photo.jpg</code>, the server checks if <code>photo.webp</code> exists and the browser supports it. If yes, the optimized file is served. <strong>No page caching issues</strong> — URLs never change.</span></div>
             </div>
         </div>
         <div class="wpio-card">
@@ -674,7 +687,7 @@ class WPIO_Admin {
             <div class="wpio-card-body">
                 <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span><strong>Images not converting?</strong> Check System Status — GD or Imagick must support WebP/AVIF output.</span></div>
                 <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span><strong>Browser still serving JPEG?</strong> On Nginx, add rewrite rules from the Delivery tab. On Apache, deactivate and reactivate the plugin.</span></div>
-                <div class="wpio-alert info"><span class="wpio-alert-icon">&#x2139;&#xFE0F;</span><span><strong>Bulk stuck?</strong> Add a real cron job: <code>wget -q -O /dev/null "<?php echo esc_url(site_url('/wp-cron.php?doing_wp_cron')); ?>"</code></span></div>
+                <div class="wpio-alert info"><span class="wpio-alert-icon">ℹ️</span><span><strong>Bulk stuck?</strong> Add a real cron job: <code>wget -q -O /dev/null "<?php echo esc_url(site_url('/wp-cron.php?doing_wp_cron')); ?>"</code></span></div>
             </div>
         </div>
         </div>

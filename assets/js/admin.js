@@ -18,13 +18,18 @@
     $('input[name="wpio_quality"]').val(v);
   });
 
-  /* ── Resize mode show/hide ── */
+  /* ── Resize toggle show/hide ── */
   function updateResizeFields(){
-    var mode = $('#wpio_resize_mode').val();
-    $('#wpio_row_maxdim').toggle(mode === 'max_dimension');
-    $('#wpio_row_maxw').toggle(mode === 'max_width');
+    var enabled = $('#wpio_resize_enabled').is(':checked');
+    $('#wpio-resize-fields').toggle(enabled);
   }
-  $(document).on('change', '#wpio_resize_mode', updateResizeFields);
+  $(document).on('change', '#wpio_resize_enabled', updateResizeFields);
+
+  /* ── Method card selection ── */
+  $(document).on('change', '.wpio-method-card input[type=radio]', function(){
+    $('.wpio-method-card').removeClass('selected');
+    $(this).closest('.wpio-method-card').addClass('selected');
+  });
 
   /* ── Bulk Queue ── */
   var running = (typeof wpioData !== 'undefined') ? wpioData.queueRunning : false;
@@ -105,10 +110,8 @@
   /* ── Init on ready ── */
   $(document).ready(function(){
     updateResizeFields();
-    /* Set initial slider gradient */
     var $slider = $('.wpio-quality-slider');
     if ($slider.length) $slider.css('--val', $slider.val() + '%');
-    /* Resume bulk if running */
     if (running && $('#wpio-live-progress').length) {
       $('#wpio-live-progress').show();
       $('#wpio-bulk-cancel').show();

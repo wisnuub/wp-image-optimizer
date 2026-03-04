@@ -50,25 +50,46 @@ class WPIO_Converter {
     }
 
     /**
+     * Returns the target resize dimensions [new_w, new_h] or null if no resize needed.
+     * Respects wpio_resize_enabled, wpio_max_width, wpio_max_height, keeping aspect ratio.
+     */
+    private static function get_resize_dims( $w, $h ) {
+        if ( get_option( 'wpio_resize_enabled', '0' ) !== '1' ) return null;
+
+        $max_w = (int) get_option( 'wpio_max_width',  0 );
+        $max_h = (int) get_option( 'wpio_max_height', 0 );
+
+        if ( $max_w <= 0 && $max_h <= 0 ) return null;
+
+        $ratio = 1.0;
+        if ( $max_w > 0 && $w > $max_w ) $ratio = min( $ratio, $max_w / $w );
+        if ( $max_h > 0 && $h > $max_h ) $ratio = min( $ratio, $max_h / $h );
+
+        if ( $ratio >= 1.0 ) return null; // image already fits
+
+        return array(
+            (int) round( $w * $ratio ),
+            (int) round( $h * $ratio ),
+        );
+    }
+
+    /**
      * Check if the converted file is genuinely smaller than the source.
-     * Returns true when the conversion should be kept, false if it should be discarded.
      */
     private static function is_size_acceptable( $src, $dest ) {
         if ( ! file_exists( $dest ) ) return false;
-        $src_size  = filesize( $src );
-        $dest_size = filesize( $dest );
-        // Converted file must be strictly smaller than the original.
-        return $dest_size < $src_size;
+        return filesize( $dest ) < filesize( $src );
     }
 
     private static function discard_if_larger( $src, $dest ) {
         if ( ! self::is_size_acceptable( $src, $dest ) ) {
+            $dest_size = file_exists( $dest ) ? filesize( $dest ) : 0;
             @unlink( $dest );
             return new WP_Error(
                 'output_larger',
                 sprintf(
                     'Converted file (%s) is not smaller than original (%s) — skipped to preserve quality.',
-                    size_format( filesize( $dest ) ),
+                    size_format( $dest_size ),
                     size_format( filesize( $src ) )
                 )
             );
@@ -87,11 +108,8 @@ class WPIO_Converter {
         }
         if ( ! $image ) return new WP_Error( 'gd_create_failed', 'GD could not open image.' );
 
-        if ( get_option( 'wpio_strip_exif', '1' ) === '1' ) {
-            // GD strips EXIF automatically on re-encode; no extra step needed
-        }
+        $image = self::maybe_resize_gd( $image );
 
-        $image  = self::maybe_resize_gd( $image );
         $result = false;
         if ( $format === 'webp' && function_exists( 'imagewebp' ) ) {
             $result = imagewebp( $image, $dest, $quality );
@@ -101,7 +119,6 @@ class WPIO_Converter {
         imagedestroy( $image );
         if ( ! $result ) return new WP_Error( 'gd_convert_failed', 'GD conversion failed for: ' . basename( $src ) );
 
-        // Always discard the converted file if it is not smaller than the source.
         $size_check = self::discard_if_larger( $src, $dest );
         if ( is_wp_error( $size_check ) ) return $size_check;
 
@@ -113,17 +130,9 @@ class WPIO_Converter {
             $im = new Imagick( $src );
             if ( get_option( 'wpio_strip_exif', '1' ) === '1' ) $im->stripImage();
 
-            $resize_mode = get_option( 'wpio_resize_mode', 'none' );
-            $max_dim     = (int) get_option( 'wpio_max_dimension', 0 );
-            $max_width   = (int) get_option( 'wpio_max_width', 0 );
-            $w = $im->getImageWidth();
-            $h = $im->getImageHeight();
-
-            if ( $resize_mode === 'max_dimension' && $max_dim > 0 && ( $w > $max_dim || $h > $max_dim ) ) {
-                $im->resizeImage( $max_dim, $max_dim, Imagick::FILTER_LANCZOS, 1, true );
-            } elseif ( $resize_mode === 'max_width' && $max_width > 0 && $w > $max_width ) {
-                $new_h = (int) round( $h * ( $max_width / $w ) );
-                $im->resizeImage( $max_width, $new_h, Imagick::FILTER_LANCZOS, 1, false );
+            $dims = self::get_resize_dims( $im->getImageWidth(), $im->getImageHeight() );
+            if ( $dims ) {
+                $im->resizeImage( $dims[0], $dims[1], Imagick::FILTER_LANCZOS, 1, false );
             }
 
             $im->setImageCompressionQuality( $quality );
@@ -132,7 +141,6 @@ class WPIO_Converter {
             $im->clear();
             $im->destroy();
 
-            // Always discard the converted file if it is not smaller than the source.
             $size_check = self::discard_if_larger( $src, $dest );
             if ( is_wp_error( $size_check ) ) return $size_check;
 
@@ -143,25 +151,13 @@ class WPIO_Converter {
     }
 
     private static function maybe_resize_gd( $image ) {
-        $resize_mode = get_option( 'wpio_resize_mode', 'none' );
-        $max_dim     = (int) get_option( 'wpio_max_dimension', 0 );
-        $max_width   = (int) get_option( 'wpio_max_width', 0 );
-        $w = imagesx( $image );
-        $h = imagesy( $image );
-        $new_w = $w; $new_h = $h;
+        $w    = imagesx( $image );
+        $h    = imagesy( $image );
+        $dims = self::get_resize_dims( $w, $h );
 
-        if ( $resize_mode === 'max_dimension' && $max_dim > 0 && ( $w > $max_dim || $h > $max_dim ) ) {
-            $ratio = min( $max_dim / $w, $max_dim / $h );
-            $new_w = (int) round( $w * $ratio );
-            $new_h = (int) round( $h * $ratio );
-        } elseif ( $resize_mode === 'max_width' && $max_width > 0 && $w > $max_width ) {
-            $ratio = $max_width / $w;
-            $new_w = $max_width;
-            $new_h = (int) round( $h * $ratio );
-        }
+        if ( ! $dims ) return $image;
 
-        if ( $new_w === $w && $new_h === $h ) return $image;
-
+        list( $new_w, $new_h ) = $dims;
         $resized = imagecreatetruecolor( $new_w, $new_h );
         imagealphablending( $resized, false );
         imagesavealpha( $resized, true );
