@@ -3,9 +3,6 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class WPIO_Folder_Scanner {
 
-    /**
-     * Get allowed extensions based on saved options.
-     */
     public static function get_allowed_extensions() {
         $exts = array();
         if ( get_option( 'wpio_ext_jpg', '1' ) === '1' ) { $exts[] = 'jpg'; $exts[] = 'jpeg'; }
@@ -14,21 +11,20 @@ class WPIO_Folder_Scanner {
         return ! empty( $exts ) ? $exts : array( 'jpg', 'jpeg', 'png' );
     }
 
-    /**
-     * Get excluded directory name fragments from options.
-     * Stored as comma-separated values in wpio_excluded_dirs.
-     */
     public static function get_excluded_dirs() {
         $raw   = get_option( 'wpio_excluded_dirs', '' );
         $parts = array_filter( array_map( 'trim', explode( ',', $raw ) ) );
-        // Always exclude backups dir
         $parts[] = 'wpio-backups';
         return array_unique( $parts );
     }
 
     /**
-     * Check if a file path should be excluded.
+     * Public wrapper so WPIO_Folder_Tree can call it.
      */
+    public static function is_excluded_path( $path ) {
+        return self::is_excluded( $path );
+    }
+
     private static function is_excluded( $path ) {
         foreach ( self::get_excluded_dirs() as $fragment ) {
             if ( $fragment !== '' && strpos( $path, $fragment ) !== false ) {
@@ -38,9 +34,6 @@ class WPIO_Folder_Scanner {
         return false;
     }
 
-    /**
-     * Get the list of configured folders to scan.
-     */
     public static function get_folders() {
         $upload_dir = wp_upload_dir();
         $default    = $upload_dir['basedir'];
@@ -63,9 +56,6 @@ class WPIO_Folder_Scanner {
         return $folders;
     }
 
-    /**
-     * Scan all configured folders and return list of unconverted image paths.
-     */
     public static function get_pending_images( $format = 'webp' ) {
         $files   = array();
         $allowed = self::get_allowed_extensions();
@@ -90,9 +80,6 @@ class WPIO_Folder_Scanner {
         return array_unique( $files );
     }
 
-    /**
-     * Get total/converted/pending counts across all folders.
-     */
     public static function get_counts( $format = 'webp' ) {
         $total = $converted = 0;
         $allowed = self::get_allowed_extensions();
