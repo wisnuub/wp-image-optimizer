@@ -1,5 +1,7 @@
 # WP Image Optimizer
 
+> **v1.2** — Convert & serve next-gen images (WebP & AVIF) automatically, without breaking any existing site links.
+
 A free, lightweight WordPress plugin to convert and compress existing images (JPG/PNG) to **WebP** or **AVIF** — without breaking any existing site links.
 
 ## How It Works
@@ -18,7 +20,13 @@ Instead of replacing image files, the plugin:
 - ✅ Choose WebP or AVIF output
 - ✅ Configurable quality (1–100)
 - ✅ Zero broken links — original URLs kept, served via `.htaccess` rewrite
-- ✅ Works with GD or Imagick
+- ✅ Works with GD or Imagick, with manual method selector
+- ✅ Supported file extensions selector (JPG, PNG, GIF)
+- ✅ Excluded directories with live preview
+- ✅ Extra features: Strip EXIF, Remove if larger
+- ✅ Expandable file tree with per-folder image counts
+- ✅ Nginx config generator
+- ✅ WP-CLI support
 - ✅ Clean admin UI under **Media → Image Optimizer**
 
 ## Requirements
@@ -35,13 +43,37 @@ Instead of replacing image files, the plugin:
 3. Activate in **Plugins**
 4. Go to **Media → Image Optimizer** and configure
 
+## Changelog
+
+### v1.2
+- Added conversion method selector (Auto / Imagick / GD) with live availability indicators
+- Added supported file extensions toggle (JPG, PNG, GIF)
+- Added excluded directories with live fragment preview
+- Added extra features: Strip EXIF metadata, Remove if larger than original
+- Added expandable file tree with per-folder total / converted / pending counts
+- Added `class-wpio-folder-tree.php` — recursive folder tree builder
+
+### v1.1
+- Initial public release
+- Bulk & auto-convert on upload
+- WebP & AVIF support
+- Background queue via WP-Cron
+- Image backup & restore
+- Nginx config generator
+- WP-CLI commands
+- Media Library column with per-image status
+
 ## Roadmap
 
-- [ ] Nginx rewrite rule support
-- [ ] Per-image conversion status in Media Library
-- [ ] WP-CLI bulk conversion command
+- [x] Nginx rewrite rule support
+- [x] Per-image conversion status in Media Library
+- [x] WP-CLI bulk conversion command
+- [x] Image backup/restore before conversion
+- [x] Conversion method selector (Imagick / GD / Auto)
+- [x] Excluded directories
+- [x] File tree with per-folder image counts
+- [ ] 🚧 Server-side image optimization *(coming soon)*
 - [ ] REST API endpoint for headless WordPress use
-- [ ] Image backup/restore before conversion
 
 ## License
 
