@@ -107,6 +107,14 @@ class WPIO_Admin {
         $base_url = admin_url( 'upload.php?page=wp-image-optimizer' );
         $banner   = apply_filters( 'wpio_banner_image_url', '' );
 
+        // Settings tabs are rendered together on one page; system/help are separate.
+        $settings_tabs   = array( 'general', 'advanced', 'delivery' );
+        $is_settings_tab = in_array( $tab, $settings_tabs, true );
+        if ( ! $is_settings_tab && ! in_array( $tab, array( 'system', 'help' ), true ) ) {
+            $tab             = 'general';
+            $is_settings_tab = true;
+        }
+
         if ( isset( $_GET['wpio_repaired'] ) ) {
             echo '<div class="notice notice-success is-dismissible"><p><strong>WP Image Optimizer:</strong> Rewrite rules repaired successfully. ✅</p></div>';
         }
@@ -128,10 +136,17 @@ class WPIO_Admin {
             </div>
             <div class="wpio-tabs-wrap">
                 <ul class="wpio-nav-tabs">
-                    <?php foreach ( $this->get_tabs() as $key => $t ) : ?>
+                    <?php foreach ( $this->get_tabs() as $key => $t ) :
+                        $is_js_tab = in_array( $key, $settings_tabs, true );
+                        $active    = ( $is_settings_tab && $is_js_tab && $tab === $key )
+                                  || ( ! $is_settings_tab && $tab === $key );
+                    ?>
                     <li>
-                        <a href="<?php echo esc_url( $base_url . '&tab=' . $key ); ?>"
-                           class="<?php echo $tab === $key ? 'active' : ''; ?>">
+                        <?php if ( $is_js_tab ) : ?>
+                        <a href="#" class="wpio-tab-link <?php echo $active ? 'active' : ''; ?>" data-pane="<?php echo esc_attr( $key ); ?>">
+                        <?php else : ?>
+                        <a href="<?php echo esc_url( $base_url . '&tab=' . $key ); ?>" class="<?php echo $active ? 'active' : ''; ?>">
+                        <?php endif; ?>
                             <span class="wpio-tab-icon"><?php echo esc_html( $t['icon'] ); ?></span>
                             <?php echo esc_html( $t['label'] ); ?>
                         </a>
@@ -140,12 +155,30 @@ class WPIO_Admin {
                 </ul>
             </div>
             <?php
-            switch ( $tab ) {
-                case 'general':  $this->tab_general();  break;
-                case 'advanced': $this->tab_advanced(); break;
-                case 'delivery': $this->tab_delivery(); break;
-                case 'system':   $this->tab_system();   break;
-                case 'help':     $this->tab_help();     break;
+            if ( $is_settings_tab ) {
+                ?>
+                <div id="wpio-save-notice" class="wpio-save-notice" style="display:none;">Settings saved successfully.</div>
+                <form method="post" id="wpio-settings-form">
+                <?php wp_nonce_field( 'wpio_save_settings', '_wpnonce_wpio' ); ?>
+
+                <div class="wpio-tab-pane" data-pane="general" style="<?php echo $tab !== 'general' ? 'display:none;' : ''; ?>">
+                    <?php $this->tab_general(); ?>
+                </div>
+                <div class="wpio-tab-pane" data-pane="advanced" style="<?php echo $tab !== 'advanced' ? 'display:none;' : ''; ?>">
+                    <?php $this->tab_advanced(); ?>
+                </div>
+                <div class="wpio-tab-pane" data-pane="delivery" style="<?php echo $tab !== 'delivery' ? 'display:none;' : ''; ?>">
+                    <?php $this->tab_delivery(); ?>
+                </div>
+
+                <p class="submit"><button type="submit" class="wpio-btn wpio-btn-primary wpio-btn-lg" id="wpio-save-btn">Save Settings</button></p>
+                </form>
+                <?php
+            } else {
+                switch ( $tab ) {
+                    case 'system': $this->tab_system(); break;
+                    case 'help':   $this->tab_help();   break;
+                }
             }
             ?>
         </div>
@@ -161,11 +194,8 @@ class WPIO_Admin {
         $auto    = get_option( 'wpio_auto_convert', '1' );
         $backup  = get_option( 'wpio_backup_enabled', '1' );
         ?>
-        <div id="wpio-save-notice" class="wpio-save-notice" style="display:none;">Settings saved successfully.</div>
         <div class="wpio-layout">
         <div class="wpio-main">
-        <form method="post" id="wpio-settings-form" data-tab="general">
-        <?php wp_nonce_field( 'wpio_save_settings', '_wpnonce_wpio' ); ?>
         <input type="hidden" name="wpio_format" id="wpio_format_hidden" value="<?php echo esc_attr( $format ); ?>" />
         <input type="hidden" name="wpio_quality" id="wpio_quality_hidden" value="<?php echo esc_attr( $quality ); ?>" />
 
@@ -299,8 +329,6 @@ class WPIO_Admin {
         </div>
 
         <?php $this->render_bulk_card(); ?>
-        <p class="submit"><button type="submit" class="wpio-btn wpio-btn-primary wpio-btn-lg" id="wpio-save-btn">Save Settings</button></p>
-        </form>
         </div>
         <?php $this->render_sidebar(); ?>
         </div>
@@ -322,10 +350,10 @@ class WPIO_Admin {
             'resize_enabled'    => get_option( 'wpio_resize_enabled', '0' ),
             'max_width'         => (int) get_option( 'wpio_max_width', 0 ),
             'max_height'        => (int) get_option( 'wpio_max_height', 0 ),
-            'batch_size'        => get_option( 'wpio_batch_size', 5 ),
-            'sleep_time'        => get_option( 'wpio_sleep_time', 500 ),
-            'memory_limit'      => get_option( 'wpio_memory_limit', '256M' ),
-            'exec_time'         => get_option( 'wpio_exec_time', 120 ),
+            'batch_size'        => (int) get_option( 'wpio_batch_size', 5 ) ?: 5,
+            'sleep_time'        => (int) get_option( 'wpio_sleep_time', 500 ) ?: 500,
+            'memory_limit'      => get_option( 'wpio_memory_limit', '256M' ) ?: '256M',
+            'exec_time'         => (int) get_option( 'wpio_exec_time', 120 ) ?: 120,
             'custom_folders'    => get_option( 'wpio_custom_folders', '' ),
             'scan_uploads'      => get_option( 'wpio_scan_uploads', '1' ),
             'scan_plugins'      => get_option( 'wpio_scan_plugins', '0' ),
@@ -338,10 +366,7 @@ class WPIO_Admin {
         // Per-source image counts for folder toggle labels
         $src_counts = WPIO_Folder_Scanner::get_counts_by_source();
         ?>
-        <div id="wpio-save-notice" class="wpio-save-notice" style="display:none;">Settings saved successfully.</div>
         <div class="wpio-layout full">
-        <form method="post" id="wpio-settings-form" data-tab="advanced">
-        <?php wp_nonce_field( 'wpio_save_settings', '_wpnonce_wpio' ); ?>
 
         <!-- Supported file extensions -->
         <div class="wpio-card">
@@ -612,8 +637,6 @@ class WPIO_Admin {
             </div>
         </div>
 
-        <p class="submit"><button type="submit" class="wpio-btn wpio-btn-primary wpio-btn-lg" id="wpio-save-btn">Save Settings</button></p>
-        </form>
         </div>
         <?php
     }
@@ -625,10 +648,7 @@ class WPIO_Admin {
         $format  = get_option( 'wpio_format', 'webp' );
         $method  = get_option( 'wpio_delivery_method', 'rewrite' );
         ?>
-        <div id="wpio-save-notice" class="wpio-save-notice" style="display:none;">Settings saved successfully.</div>
         <div class="wpio-layout full">
-        <form method="post" id="wpio-settings-form" data-tab="delivery">
-        <?php wp_nonce_field( 'wpio_save_settings', '_wpnonce_wpio' ); ?>
 
         <div class="wpio-card">
             <div class="wpio-card-head"><div><h2>🚀 Delivery method</h2><p>How optimized images are served to visitors.</p></div></div>
@@ -703,8 +723,6 @@ class WPIO_Admin {
         </div>
         <?php endif; ?>
 
-        <p class="submit"><button type="submit" class="wpio-btn wpio-btn-primary wpio-btn-lg" id="wpio-save-btn">Save Settings</button></p>
-        </form>
         </div>
         <?php
     }
@@ -993,50 +1011,38 @@ class WPIO_Admin {
         WPIO_Stats::bust_cache();
     }
 
-    /* -- AJAX: Save settings (per-tab, prevents cross-tab overwrite) -- */
+    /* -- AJAX: Save all settings across all tabs -- */
     public function ajax_save_settings() {
         if ( ! check_ajax_referer( 'wpio_save_settings', '_wpnonce_wpio', false ) || ! current_user_can( 'manage_options' ) ) {
             wp_send_json_error( 'Unauthorized' );
         }
 
-        $tab = isset( $_POST['wpio_tab'] ) ? sanitize_key( $_POST['wpio_tab'] ) : '';
-
-        // Define which options belong to which tab.
-        $tab_options = array(
-            'general' => array(
-                'wpio_format'         => 'text',
-                'wpio_quality'        => 'int',
-                'wpio_auto_convert'   => 'checkbox',
-                'wpio_backup_enabled' => 'checkbox',
-            ),
-            'advanced' => array(
-                'wpio_ext_jpg'           => 'checkbox',
-                'wpio_ext_png'           => 'checkbox',
-                'wpio_ext_gif'           => 'checkbox',
-                'wpio_scan_uploads'      => 'checkbox',
-                'wpio_scan_plugins'      => 'checkbox',
-                'wpio_scan_themes'       => 'checkbox',
-                'wpio_excluded_dirs'     => 'text',
-                'wpio_conversion_method' => 'text',
-                'wpio_resize_enabled'    => 'checkbox',
-                'wpio_max_width'         => 'int',
-                'wpio_max_height'        => 'int',
-                'wpio_remove_if_larger'  => 'checkbox',
-                'wpio_strip_exif'        => 'checkbox',
-                'wpio_batch_size'        => 'int',
-                'wpio_sleep_time'        => 'int',
-                'wpio_memory_limit'      => 'text',
-                'wpio_exec_time'         => 'int',
-                'wpio_custom_folders'    => 'textarea',
-            ),
-            'delivery' => array(
-                'wpio_delivery_method' => 'text',
-            ),
+        // All saveable options and their types.
+        $all_options = array(
+            'wpio_format'            => 'text',
+            'wpio_quality'           => 'int',
+            'wpio_auto_convert'      => 'checkbox',
+            'wpio_backup_enabled'    => 'checkbox',
+            'wpio_ext_jpg'           => 'checkbox',
+            'wpio_ext_png'           => 'checkbox',
+            'wpio_ext_gif'           => 'checkbox',
+            'wpio_scan_uploads'      => 'checkbox',
+            'wpio_scan_plugins'      => 'checkbox',
+            'wpio_scan_themes'       => 'checkbox',
+            'wpio_excluded_dirs'     => 'text',
+            'wpio_conversion_method' => 'text',
+            'wpio_resize_enabled'    => 'checkbox',
+            'wpio_max_width'         => 'int',
+            'wpio_max_height'        => 'int',
+            'wpio_remove_if_larger'  => 'checkbox',
+            'wpio_strip_exif'        => 'checkbox',
+            'wpio_batch_size'        => 'int',
+            'wpio_sleep_time'        => 'int',
+            'wpio_memory_limit'      => 'text',
+            'wpio_exec_time'         => 'int',
+            'wpio_custom_folders'    => 'textarea',
+            'wpio_delivery_method'   => 'text',
         );
-
-        if ( ! isset( $tab_options[ $tab ] ) ) {
-            wp_send_json_error( 'Invalid tab' );
-        }
 
         // Defaults for server protection fields (expert settings).
         $defaults = array(
@@ -1046,14 +1052,13 @@ class WPIO_Admin {
             'wpio_exec_time'    => 120,
         );
 
-        foreach ( $tab_options[ $tab ] as $key => $type ) {
+        foreach ( $all_options as $key => $type ) {
             switch ( $type ) {
                 case 'checkbox':
                     $value = isset( $_POST[ $key ] ) ? '1' : '0';
                     break;
                 case 'int':
                     $value = isset( $_POST[ $key ] ) ? absint( $_POST[ $key ] ) : 0;
-                    // Apply defaults for server protection fields if empty/zero.
                     if ( $value === 0 && isset( $defaults[ $key ] ) ) {
                         $value = $defaults[ $key ];
                     }
@@ -1063,7 +1068,6 @@ class WPIO_Admin {
                     break;
                 default:
                     $value = isset( $_POST[ $key ] ) ? sanitize_text_field( wp_unslash( $_POST[ $key ] ) ) : '';
-                    // Apply defaults for text-based server protection fields if empty.
                     if ( $value === '' && isset( $defaults[ $key ] ) ) {
                         $value = $defaults[ $key ];
                     }
@@ -1086,14 +1090,12 @@ class WPIO_Admin {
             update_option( $key, $value );
         }
 
-        // Refresh rewrite rules when format or delivery method changes.
-        if ( $tab === 'general' || $tab === 'delivery' ) {
-            $delivery = get_option( 'wpio_delivery_method', 'rewrite' );
-            if ( $delivery === 'rewrite' ) {
-                WPIO_Rewrite::insert_rules( get_option( 'wpio_format', 'webp' ) );
-            } else {
-                WPIO_Rewrite::remove_rules();
-            }
+        // Refresh rewrite rules.
+        $delivery = get_option( 'wpio_delivery_method', 'rewrite' );
+        if ( $delivery === 'rewrite' ) {
+            WPIO_Rewrite::insert_rules( get_option( 'wpio_format', 'webp' ) );
+        } else {
+            WPIO_Rewrite::remove_rules();
         }
 
         WPIO_Stats::bust_cache();

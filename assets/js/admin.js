@@ -118,14 +118,23 @@
     });
   });
 
-  /* ── AJAX Settings Save ── */
+  /* ── Tab switching (General / Advanced / Delivery) ── */
+  $(document).on('click', '.wpio-tab-link', function(e){
+    e.preventDefault();
+    var pane = $(this).data('pane');
+    $('.wpio-nav-tabs a').removeClass('active');
+    $(this).addClass('active');
+    $('.wpio-tab-pane').hide();
+    $('.wpio-tab-pane[data-pane="' + pane + '"]').show();
+  });
+
+  /* ── AJAX Settings Save (all tabs at once) ── */
   $(document).on('submit', '#wpio-settings-form', function(e){
     e.preventDefault();
     var $form = $(this);
     var $btn = $form.find('#wpio-save-btn');
-    var tab = $form.data('tab');
     var data = $form.serialize();
-    data += '&action=wpio_save_settings&wpio_tab=' + encodeURIComponent(tab);
+    data += '&action=wpio_save_settings';
 
     $btn.prop('disabled', true).text('Saving…');
     $.post(ajaxurl, data, function(res){
@@ -143,6 +152,50 @@
     });
   });
 
+  /* ── File Tree ── */
+  function loadTree(){
+    var $wrap = $('#wpio-tree-wrap');
+    if (!$wrap.length) return;
+    $('#wpio-tree-loading').show();
+    $('#wpio-tree-root').hide().empty();
+    $.post(ajaxurl, {
+      action: 'wpio_folder_tree',
+      _wpnonce: (typeof wpioData !== 'undefined' ? wpioData.nonceFolderTree : '')
+    }, function(res){
+      $('#wpio-tree-loading').hide();
+      if (!res.success || !res.data.length) {
+        $('#wpio-tree-loading').text('No folders found.').show();
+        return;
+      }
+      var $root = $('#wpio-tree-root');
+      $.each(res.data, function(_, node){ $root.append(buildNode(node)); });
+      $root.show();
+    }).fail(function(){
+      $('#wpio-tree-loading').text('Failed to load file tree.').show();
+    });
+  }
+  function buildNode(node){
+    var pct = node.total > 0 ? Math.round((node.converted / node.total) * 100) : 0;
+    var badge = node.total > 0
+      ? '<span style="color:#888;font-size:11px;margin-left:6px;">' + node.converted + '/' + node.total + ' (' + pct + '%)</span>'
+      : '<span style="color:#aaa;font-size:11px;margin-left:6px;">empty</span>';
+    var $li = $('<li>');
+    var label = $('<span style="cursor:pointer;">').html((node.children && node.children.length ? '▸ ' : '  ') + '<strong>' + $('<span>').text(node.name).html() + '</strong>' + badge);
+    $li.append(label);
+    if (node.children && node.children.length) {
+      var $ul = $('<ul class="wpio-tree" style="display:none;margin-left:18px;">');
+      $.each(node.children, function(_, child){ $ul.append(buildNode(child)); });
+      $li.append($ul);
+      label.on('click', function(){
+        var open = $ul.is(':visible');
+        $ul.slideToggle(150);
+        label.html((open ? '▸ ' : '▾ ') + '<strong>' + $('<span>').text(node.name).html() + '</strong>' + badge);
+      });
+    }
+    return $li;
+  }
+  $(document).on('click', '#wpio-tree-refresh', function(){ loadTree(); });
+
   /* ── Init on ready ── */
   $(document).ready(function(){
     updateResizeFields();
@@ -152,6 +205,7 @@
       $('#wpio-live-progress').show();
       $('#wpio-bulk-cancel').show();
     }
+    loadTree();
   });
 
 })(jQuery);
