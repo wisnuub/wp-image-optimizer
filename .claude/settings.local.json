@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -rn \"== ''both''\" /c/Users/Wisnu/wp-image-optimizer/ --include=\"*.php\")",
+      "Bash(grep -rn \"\\\\!= ''both''\\\\|\\\\=== ''both''\" /c/Users/Wisnu/wp-image-optimizer/ --include=\"*.php\")",
+      "Bash(grep -n \"in_array.*format\" /c/Users/Wisnu/wp-image-optimizer/includes/*.php)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(mkdir -p /c/Users/Wisnu/media-janitor/includes /c/Users/Wisnu/media-janitor/assets/css /c/Users/Wisnu/media-janitor/assets/js)",
+      "Read(//c/Users/Wisnu/**)"
+    ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
+}
