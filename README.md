@@ -1,6 +1,6 @@
 # WP Image Optimizer
 
-> **v1.2** — Convert & serve next-gen images (WebP & AVIF) automatically, without breaking any existing site links.
+> **v1.3** — Convert & serve next-gen images (WebP & AVIF) automatically, without breaking any existing site links.
 
 A free, lightweight WordPress plugin to convert and compress existing images (JPG/PNG) to **WebP** or **AVIF** — without breaking any existing site links.
 
@@ -44,6 +44,9 @@ Instead of replacing image files, the plugin:
 4. Go to **Media → Image Optimizer** and configure
 
 ## Changelog
+
+### v1.3
+- Fixed: Start Bulk Convert button was submitting the settings form instead of triggering bulk conversion (missing `type="button"` attribute)
 
 ### v1.2
 - Added conversion method selector (Auto / Imagick / GD) with live availability indicators
