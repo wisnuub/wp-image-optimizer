@@ -14,6 +14,8 @@ class WPIO_Rewrite {
     const TAMPER_KEY   = 'wpio_rewrite_tampered';
     const DISMISS_KEY  = 'wpio_rewrite_notice_dismissed';
     const CRON_HOOK    = 'wpio_check_rewrite_rules';
+    const RULES_VER    = 2; // bump when build_rules() output changes
+    const RULES_VER_KEY = 'wpio_rewrite_rules_ver';
 
     /* -------------------------------------------------------
        Activation / Deactivation
@@ -54,9 +56,10 @@ class WPIO_Rewrite {
         $htaccess = self::htaccess_path();
         $rules    = self::build_rules( $format );
         insert_with_markers( $htaccess, self::MARKER, $rules );
-        // Rules just (re)written — clear any tamper flag.
+        // Rules just (re)written — clear any tamper flag and store current version.
         delete_option( self::TAMPER_KEY );
         delete_transient( self::DISMISS_KEY );
+        update_option( self::RULES_VER_KEY, self::RULES_VER );
     }
 
     public static function remove_rules() {
@@ -79,6 +82,9 @@ class WPIO_Rewrite {
             return;
         }
 
+        $delivery = get_option( 'wpio_delivery_method', 'rewrite' );
+        if ( $delivery !== 'rewrite' ) return;
+
         $htaccess = self::htaccess_path();
         if ( ! file_exists( $htaccess ) ) {
             update_option( self::TAMPER_KEY, 'missing_file' );
@@ -90,10 +96,17 @@ class WPIO_Rewrite {
 
         if ( strpos( $content, $marker ) === false ) {
             update_option( self::TAMPER_KEY, 'rules_missing' );
-        } else {
-            // Rules are present — clear any stale flag.
-            delete_option( self::TAMPER_KEY );
+            return;
         }
+
+        // Auto-upgrade stale rules when the build_rules() output has changed.
+        if ( (int) get_option( self::RULES_VER_KEY, 0 ) < self::RULES_VER ) {
+            self::insert_rules( get_option( 'wpio_format', 'webp' ) );
+            return;
+        }
+
+        // Rules are present and up to date — clear any stale flag.
+        delete_option( self::TAMPER_KEY );
     }
 
     /* -------------------------------------------------------
@@ -236,8 +249,7 @@ class WPIO_Rewrite {
         foreach ( array_reverse( $formats ) as $fmt ) {
             $rules[] = '# Serve ' . strtoupper( $fmt ) . ' if it exists and browser supports it';
             $rules[] = 'RewriteCond %{HTTP_ACCEPT} image/' . $fmt;
-            $rules[] = 'RewriteCond %{REQUEST_FILENAME} \.(jpe?g|png)$';
-            $rules[] = 'RewriteCond %{REQUEST_FILENAME}.' . $fmt . ' -f';
+            $rules[] = 'RewriteCond %{DOCUMENT_ROOT}/$1.' . $fmt . ' -f';
             $rules[] = 'RewriteRule ^(.+)\.(jpe?g|png)$ $1.' . $fmt . ' [T=image/' . $fmt . ',L]';
         }
 
