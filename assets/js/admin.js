@@ -32,10 +32,12 @@
   });
 
   /* ── Bulk Queue ── */
-  var running = (typeof wpioData !== 'undefined') ? wpioData.queueRunning : false;
+  // Fix #6: queueRunning is a real boolean from PHP now, but guard against legacy string 'true'
+  var running = (typeof wpioData !== 'undefined') ? (wpioData.queueRunning === true || wpioData.queueRunning === 'true') : false;
   var pollTimer = null;
   var retryCount = 0;
   var MAX_RETRIES = 5;
+  var prevErrors = 0;
 
   function addLog(msg, type){
     var cls = type || 'log-info';
@@ -44,11 +46,29 @@
     $log[0].scrollTop = $log[0].scrollHeight;
   }
 
+  /* ── Fix #2: live-update the SVG ring chart ── */
+  function updateRing(pct){
+    var $circle = $('#wpio-ring-pct-circle');
+    if (!$circle.length) return;
+    var circ = parseFloat($circle.data('circ'));
+    var offset = parseFloat($circle.data('offset'));
+    if (!circ) return;
+    var dash = +(circ * pct / 100).toFixed(2);
+    var gap  = +(circ - dash).toFixed(2);
+    $circle.attr('stroke-dasharray', dash + ' ' + gap);
+    $circle.attr('stroke-dashoffset', offset);
+    $('#wpio-ring-pct-text').text(pct + '%');
+    $('#wpio-ring-label').text(pct + '% converted');
+  }
+
   function updateProgress(done, total, errors){
     var pct = total > 0 ? Math.round((done / total) * 100) : 0;
     $('#wpio-prog-bar').css('width', pct + '%').text(pct + '%');
     $('.wpio-progress-wrap').attr('aria-valuenow', pct);
     $('#wpio-prog-text').text(done + ' / ' + total + ' images processed' + (errors > 0 ? ' · ' + errors + ' errors' : ''));
+    updateRing(pct);
+    var remaining = total - done;
+    if (remaining >= 0) $('#wpio-ring-sub').text(remaining + ' images remaining');
   }
 
   function stopRunning(){
@@ -63,6 +83,12 @@
       retryCount = 0;
       if (!res.success) { addLog('Error: ' + (typeof res.data === 'string' ? res.data : 'Unknown error'), 'log-error'); stopRunning(); return; }
       var d = res.data;
+
+      // Fix #5: log per-chunk error count changes
+      var newErrors = d.progress.errors - prevErrors;
+      if (newErrors > 0) addLog(newErrors + ' error(s) in this chunk', 'log-error');
+      prevErrors = d.progress.errors;
+
       updateProgress(d.progress.done, d.progress.total, d.progress.errors);
       if (d.status === 'done') {
         addLog('All done! Converted: ' + d.progress.done + ' / Errors: ' + d.progress.errors, 'log-ok');
@@ -87,6 +113,7 @@
     if (running) return;
     running = true;
     retryCount = 0;
+    prevErrors = 0;
     $(this).prop('disabled', true).html('<span>⏳</span> Building queue…');
     $('#wpio-bulk-cancel').show();
     $('#wpio-live-progress').slideDown(200);
@@ -119,9 +146,11 @@
   });
 
   /* ── Tab switching (General / Advanced / Delivery) ── */
+  /* Fix #3: only intercept click when the pane actually exists on this page */
   $(document).on('click', '.wpio-tab-link', function(e){
-    e.preventDefault();
     var pane = $(this).data('pane');
+    if (!$('.wpio-tab-pane[data-pane="' + pane + '"]').length) return; // let browser navigate via href
+    e.preventDefault();
     $('.wpio-nav-tabs a').removeClass('active');
     $(this).addClass('active');
     $('.wpio-tab-pane').hide();

@@ -34,7 +34,7 @@ class WPIO_Admin {
         wp_enqueue_script( 'wpio-admin', WPIO_URL . 'assets/js/admin.js', array( 'jquery' ), WPIO_VERSION, true );
         $q = WPIO_Queue::get_progress();
         wp_localize_script( 'wpio-admin', 'wpioData', array(
-            'queueRunning'    => $q['running'] ? 'true' : 'false',
+            'queueRunning'    => $q['running'],
             'nonceStart'      => wp_create_nonce( 'wpio_queue_start' ),
             'nonceChunk'      => wp_create_nonce( 'wpio_chunk' ),
             'nonceCancel'     => wp_create_nonce( 'wpio_queue_cancel' ),
@@ -143,7 +143,7 @@ class WPIO_Admin {
                     ?>
                     <li>
                         <?php if ( $is_js_tab ) : ?>
-                        <a href="#" class="wpio-tab-link <?php echo $active ? 'active' : ''; ?>" data-pane="<?php echo esc_attr( $key ); ?>">
+                        <a href="<?php echo esc_url( $base_url . '&tab=' . $key ); ?>" class="wpio-tab-link <?php echo $active ? 'active' : ''; ?>" data-pane="<?php echo esc_attr( $key ); ?>">
                         <?php else : ?>
                         <a href="<?php echo esc_url( $base_url . '&tab=' . $key ); ?>" class="<?php echo $active ? 'active' : ''; ?>">
                         <?php endif; ?>
@@ -675,7 +675,7 @@ class WPIO_Admin {
                     foreach ( $methods as $key => $m ) : ?>
                     <label class="wpio-method-card <?php echo $method === $key ? 'selected' : ''; ?>">
                         <input type="radio" name="wpio_delivery_method" value="<?php echo esc_attr( $key ); ?>" <?php checked( $method, $key ); ?> />
-                        <div class="wpio-format-dot"></div>
+                        <div class="wpio-method-dot"></div>
                         <div class="wpio-format-name"><?php echo esc_html( $m['name'] ); ?></div>
                         <div style="font-size:12px;color:#666;margin-top:4px;"><?php echo wp_kses( $m['desc'], array( 'code' => array() ) ); ?></div>
                         <div style="font-size:11px;color:#999;margin-top:6px;">Best for: <?php echo esc_html( $m['best'] ); ?></div>
@@ -862,8 +862,8 @@ class WPIO_Admin {
                 <div class="wpio-rings">
                     <div class="wpio-ring-wrap">
                         <?php $this->svg_ring( $pct, '#FF2462' ); ?>
-                        <div class="wpio-ring-label"><?php echo esc_html($pct); ?>% converted</div>
-                        <div class="wpio-ring-sub"><?php echo esc_html($stats['pending']); ?> images remaining</div>
+                        <div class="wpio-ring-label" id="wpio-ring-label"><?php echo esc_html($pct); ?>% converted</div>
+                        <div class="wpio-ring-sub" id="wpio-ring-sub"><?php echo esc_html($stats['pending']); ?> images remaining</div>
                         <?php if ( $stats['restored'] > 0 ) : ?>
                         <div class="wpio-ring-sub" style="color:#b32d2e;">
                             🔄 <?php echo esc_html( $stats['restored'] ); ?> using original
@@ -915,9 +915,10 @@ class WPIO_Admin {
         ?>
         <svg width="<?php echo $size;?>" height="<?php echo $size;?>" viewBox="0 0 <?php echo $size;?> <?php echo $size;?>">
             <circle cx="<?php echo $size/2;?>" cy="<?php echo $size/2;?>" r="<?php echo $r;?>" fill="none" stroke="#f0f0f1" stroke-width="<?php echo $stroke;?>"/>
-            <circle cx="<?php echo $size/2;?>" cy="<?php echo $size/2;?>" r="<?php echo $r;?>" fill="none" stroke="<?php echo esc_attr($color);?>" stroke-width="<?php echo $stroke;?>"
-                stroke-dasharray="<?php echo $dash.' '.$gap;?>" stroke-dashoffset="<?php echo $circ/4;?>" stroke-linecap="round" />
-            <text x="50%" y="50%" text-anchor="middle" dy=".35em" font-size="<?php echo $size*.18;?>" font-weight="700" fill="<?php echo esc_attr($color);?>">
+            <circle id="wpio-ring-pct-circle" cx="<?php echo $size/2;?>" cy="<?php echo $size/2;?>" r="<?php echo $r;?>" fill="none" stroke="<?php echo esc_attr($color);?>" stroke-width="<?php echo $stroke;?>"
+                stroke-dasharray="<?php echo $dash.' '.$gap;?>" stroke-dashoffset="<?php echo $circ/4;?>" stroke-linecap="round"
+                data-circ="<?php echo $circ;?>" data-offset="<?php echo round($circ/4,2);?>" />
+            <text id="wpio-ring-pct-text" x="50%" y="50%" text-anchor="middle" dy=".35em" font-size="<?php echo $size*.18;?>" font-weight="700" fill="<?php echo esc_attr($color);?>">
                 <?php echo esc_html($pct); ?>%
             </text>
         </svg>
