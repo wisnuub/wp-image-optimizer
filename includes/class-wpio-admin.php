@@ -875,13 +875,13 @@ class WPIO_Admin {
                 <div class="wpio-alert warn"><span class="wpio-alert-icon">⚠️</span><span>Nginx detected. See <a href="<?php echo esc_url(admin_url('upload.php?page=wp-image-optimizer&tab=delivery'));?>">Delivery tab</a>.</span></div>
                 <?php endif; ?>
                 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                    <button id="wpio-bulk-start" class="wpio-btn wpio-btn-primary wpio-btn-lg" <?php echo $running ? 'disabled' : ''; ?>>
+                    <button type="button" id="wpio-bulk-start" class="wpio-btn wpio-btn-primary wpio-btn-lg" <?php echo $running ? 'disabled' : ''; ?>>
                         <span>⚡</span> <?php echo $running ? 'Running&hellip;' : 'Start Bulk Convert'; ?>
                     </button>
                     <?php if ( $running ) : ?>
-                    <button id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger">✕ Cancel</button>
+                    <button type="button" id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger">✕ Cancel</button>
                     <?php else : ?>
-                    <button id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger" style="display:none;">✕ Cancel</button>
+                    <button type="button" id="wpio-bulk-cancel" class="wpio-btn wpio-btn-danger" style="display:none;">✕ Cancel</button>
                     <?php endif; ?>
                 </div>
                 <div id="wpio-live-progress" style="<?php echo $running ? '' : 'display:none;'; ?>">
