@@ -53,9 +53,10 @@ class WPIO_Rewrite {
     ------------------------------------------------------- */
 
     public static function insert_rules( $format = 'webp' ) {
+        self::load_misc();
         $htaccess = self::htaccess_path();
         $rules    = self::build_rules( $format );
-        insert_with_markers( $htaccess, self::MARKER, $rules );
+        if ( ! insert_with_markers( $htaccess, self::MARKER, $rules ) ) return;
         // Rules just (re)written — clear any tamper flag and store current version.
         delete_option( self::TAMPER_KEY );
         delete_transient( self::DISMISS_KEY );
@@ -63,8 +64,19 @@ class WPIO_Rewrite {
     }
 
     public static function remove_rules() {
+        self::load_misc();
         $htaccess = self::htaccess_path();
         insert_with_markers( $htaccess, self::MARKER, array() );
+    }
+
+    /**
+     * insert_with_markers() lives in wp-admin and isn't loaded on WP-Cron,
+     * REST or WP-CLI requests — calling it there is a fatal error.
+     */
+    private static function load_misc() {
+        if ( ! function_exists( 'insert_with_markers' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/misc.php';
+        }
     }
 
     /* -------------------------------------------------------

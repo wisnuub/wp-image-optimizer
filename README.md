@@ -56,6 +56,7 @@ Instead of replacing image files, the plugin:
 - Fixed: `Vary: Accept` was added to every response (including HTML pages); now limited to images
 - Rewrite condition uses `%{REQUEST_FILENAME}` instead of `%{DOCUMENT_ROOT}` so it works when the document root differs from the WP root
 - Removed duplicate backup call in the queue (the converter already backs up)
+- Fixed: `.htaccess` rules could not be written from WP-Cron, REST or WP-CLI (fatal: undefined `insert_with_markers()`), which broke the daily auto-upgrade of stale rules
 - WP-CLI: `bulk` gains `--folder=<path>` and `--limit=<n>`
 
 ### v1.3
