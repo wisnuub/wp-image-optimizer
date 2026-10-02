@@ -14,7 +14,7 @@ class WPIO_Rewrite {
     const TAMPER_KEY   = 'wpio_rewrite_tampered';
     const DISMISS_KEY  = 'wpio_rewrite_notice_dismissed';
     const CRON_HOOK    = 'wpio_check_rewrite_rules';
-    const RULES_VER    = 2; // bump when build_rules() output changes
+    const RULES_VER    = 3; // bump when build_rules() output changes
     const RULES_VER_KEY = 'wpio_rewrite_rules_ver';
 
     /* -------------------------------------------------------
@@ -248,14 +248,19 @@ class WPIO_Rewrite {
         // Order matters — first matching rule wins with [L] flag.
         foreach ( array_reverse( $formats ) as $fmt ) {
             $rules[] = '# Serve ' . strtoupper( $fmt ) . ' if it exists and browser supports it';
+            // REQUEST_FILENAME is the real file path, so this works even when
+            // DOCUMENT_ROOT doesn't point at the WordPress root.
             $rules[] = 'RewriteCond %{HTTP_ACCEPT} image/' . $fmt;
-            $rules[] = 'RewriteCond %{DOCUMENT_ROOT}/$1.' . $fmt . ' -f';
-            $rules[] = 'RewriteRule ^(.+)\.(jpe?g|png)$ $1.' . $fmt . ' [T=image/' . $fmt . ',L]';
+            $rules[] = 'RewriteCond %{REQUEST_FILENAME}.' . $fmt . ' -f';
+            $rules[] = 'RewriteRule ^(.+\.(?:jpe?g|png))$ $1.' . $fmt . ' [NC,T=image/' . $fmt . ',L]';
         }
 
         $rules[] = '</IfModule>';
+        // Only images vary by Accept — adding it to HTML would fragment page caches.
         $rules[] = '<IfModule mod_headers.c>';
+        $rules[] = '<FilesMatch "\.(jpe?g|png|webp|avif)$">';
         $rules[] = 'Header append Vary Accept';
+        $rules[] = '</FilesMatch>';
         $rules[] = '</IfModule>';
 
         return $rules;

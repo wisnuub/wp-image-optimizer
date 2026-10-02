@@ -37,8 +37,7 @@ class WPIO_Remote {
             return new WP_Error( 'file_not_found', 'Source file not found.' );
         }
 
-        $info      = pathinfo( $source_path );
-        $dest_path = $info['dirname'] . '/' . $info['filename'] . '.' . $format;
+        $dest_path = WPIO_Converter::converted_path( $source_path, $format );
 
         if ( file_exists( $dest_path ) ) return $dest_path;
 

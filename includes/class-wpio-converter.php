@@ -16,6 +16,15 @@ class WPIO_Converter {
         return array( $format );
     }
 
+    /**
+     * Path of the converted copy for a source image: photo.jpg -> photo.jpg.webp.
+     * Keeping the original extension means photo.jpg and photo.png never share
+     * an output file, and a native photo.webp upload is never mistaken for one.
+     */
+    public static function converted_path( $source_path, $format ) {
+        return $source_path . '.' . $format;
+    }
+
     public static function convert( $source_path, $format = 'webp', $quality = 82 ) {
         $formats = self::get_formats( $format );
         $last    = null;
@@ -39,12 +48,11 @@ class WPIO_Converter {
             return new WP_Error( 'file_not_found', 'Source image not found: ' . $source_path );
         }
 
-        $info      = pathinfo( $source_path );
-        $dest_path = $info['dirname'] . '/' . $info['filename'] . '.' . $format;
+        $dest_path = self::converted_path( $source_path, $format );
 
         if ( file_exists( $dest_path ) ) return $dest_path;
 
-        $ext     = strtolower( $info['extension'] );
+        $ext     = strtolower( pathinfo( $source_path, PATHINFO_EXTENSION ) );
         $allowed = class_exists( 'WPIO_Folder_Scanner' )
             ? WPIO_Folder_Scanner::get_allowed_extensions()
             : array( 'jpg', 'jpeg', 'png', 'gif' );
@@ -56,6 +64,8 @@ class WPIO_Converter {
         if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
             WPIO_Backup::backup( $source_path );
         }
+
+        WPIO_Queue::raise_limits();
 
         $method = get_option( 'wpio_conversion_method', 'auto' );
 
@@ -116,7 +126,82 @@ class WPIO_Converter {
         return null;
     }
 
+    /**
+     * GD decodes the whole bitmap into PHP memory, so a 40MP photo needs ~200MB.
+     * Running out of memory is a fatal error that can't be caught, so refuse
+     * up front when the decode clearly won't fit in the current limit.
+     */
+    private static function gd_memory_check( $src ) {
+        $size = @getimagesize( $src );
+        if ( ! $size ) return new WP_Error( 'gd_unreadable', 'Could not read image dimensions: ' . basename( $src ) );
+
+        $limit = WPIO_Environment::parse_memory( (string) ini_get( 'memory_limit' ) );
+        if ( $limit === -1 ) return null;
+
+        // 4 bytes/px truecolor bitmap, a second full copy while rotating, ~25% overhead.
+        $copies = self::get_orientation( $src ) > 1 ? 2 : 1;
+        $needed = $size[0] * $size[1] * 4 * $copies * 1.25;
+        $dims   = self::get_resize_dims( $size[0], $size[1] );
+        if ( $dims ) $needed += $dims[0] * $dims[1] * 4;
+
+        if ( memory_get_usage( true ) + $needed > $limit * 1048576 ) {
+            return new WP_Error(
+                'too_large',
+                sprintf(
+                    '%s is %dx%d (~%dMB to decode) which exceeds the PHP memory limit (%s). Raise the memory limit in Expert settings.',
+                    basename( $src ), $size[0], $size[1], (int) ( $needed / 1048576 ), ini_get( 'memory_limit' )
+                )
+            );
+        }
+        return null;
+    }
+
+    /**
+     * EXIF orientation (1-8) for a JPEG, or 1 if unknown.
+     */
+    private static function get_orientation( $src ) {
+        if ( ! function_exists( 'exif_read_data' ) ) return 1;
+        $ext = strtolower( pathinfo( $src, PATHINFO_EXTENSION ) );
+        if ( $ext !== 'jpg' && $ext !== 'jpeg' ) return 1;
+        $exif = @exif_read_data( $src );
+        return ( $exif && ! empty( $exif['Orientation'] ) ) ? (int) $exif['Orientation'] : 1;
+    }
+
+    /**
+     * The converted file carries no EXIF, so bake the orientation into the pixels
+     * or the browser would show the photo rotated/mirrored.
+     */
+    private static function apply_orientation_gd( $image, $orientation ) {
+        // [ anticlockwise rotation, flip applied after rotating ] per EXIF orientation.
+        $ops = array(
+            2 => array( 0,   IMG_FLIP_HORIZONTAL ),
+            3 => array( 180, null ),
+            4 => array( 0,   IMG_FLIP_VERTICAL ),
+            5 => array( 90,  IMG_FLIP_VERTICAL ),   // transpose
+            6 => array( -90, null ),
+            7 => array( 90,  IMG_FLIP_HORIZONTAL ), // transverse
+            8 => array( 90,  null ),
+        );
+        if ( ! isset( $ops[ $orientation ] ) ) return $image;
+        list( $angle, $flip ) = $ops[ $orientation ];
+
+        if ( $angle ) {
+            $rotated = imagerotate( $image, $angle, 0 );
+            if ( $rotated ) {
+                imagedestroy( $image );
+                $image = $rotated;
+                imagealphablending( $image, false );
+                imagesavealpha( $image, true );
+            }
+        }
+        if ( $flip !== null ) imageflip( $image, $flip );
+        return $image;
+    }
+
     private static function convert_gd( $src, $dest, $format, $quality ) {
+        $too_large = self::gd_memory_check( $src );
+        if ( is_wp_error( $too_large ) ) return $too_large;
+
         $ext = strtolower( pathinfo( $src, PATHINFO_EXTENSION ) );
         switch ( $ext ) {
             case 'jpg':
@@ -127,6 +212,12 @@ class WPIO_Converter {
         }
         if ( ! $image ) return new WP_Error( 'gd_create_failed', 'GD could not open image.' );
 
+        // WebP can't be written from palette images (8-bit PNG/GIF); keep transparency.
+        if ( ! imageistruecolor( $image ) ) imagepalettetotruecolor( $image );
+        imagealphablending( $image, false );
+        imagesavealpha( $image, true );
+
+        $image = self::apply_orientation_gd( $image, self::get_orientation( $src ) );
         $image = self::maybe_resize_gd( $image );
 
         $result = false;
@@ -147,6 +238,7 @@ class WPIO_Converter {
     private static function convert_imagick( $src, $dest, $format, $quality ) {
         try {
             $im = new Imagick( $src );
+            self::apply_orientation_imagick( $im );
             if ( get_option( 'wpio_strip_exif', '1' ) === '1' ) $im->stripImage();
 
             $dims = self::get_resize_dims( $im->getImageWidth(), $im->getImageHeight() );
@@ -167,6 +259,21 @@ class WPIO_Converter {
         } catch ( Exception $e ) {
             return new WP_Error( 'imagick_failed', $e->getMessage() );
         }
+    }
+
+    private static function apply_orientation_imagick( $im ) {
+        $o = $im->getImageOrientation();
+        switch ( $o ) {
+            case Imagick::ORIENTATION_TOPRIGHT:    $im->flopImage(); break;
+            case Imagick::ORIENTATION_BOTTOMRIGHT: $im->rotateImage( '#000', 180 ); break;
+            case Imagick::ORIENTATION_BOTTOMLEFT:  $im->flipImage(); break;
+            case Imagick::ORIENTATION_LEFTTOP:     $im->transposeImage(); break;
+            case Imagick::ORIENTATION_RIGHTTOP:    $im->rotateImage( '#000', 90 ); break;
+            case Imagick::ORIENTATION_RIGHTBOTTOM: $im->transverseImage(); break;
+            case Imagick::ORIENTATION_LEFTBOTTOM:  $im->rotateImage( '#000', -90 ); break;
+            default: return;
+        }
+        $im->setImageOrientation( Imagick::ORIENTATION_TOPLEFT );
     }
 
     private static function maybe_resize_gd( $image ) {

@@ -136,7 +136,7 @@ class WPIO_Folder_Scanner {
      */
     private static function has_all_conversions( $path, $formats ) {
         foreach ( $formats as $fmt ) {
-            $conv = preg_replace( '/\.(jpe?g|png|gif)$/i', '.' . $fmt, $path );
+            $conv = WPIO_Converter::converted_path( $path, $fmt );
             if ( ! file_exists( $conv ) ) return false;
         }
         return true;

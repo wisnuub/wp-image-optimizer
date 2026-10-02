@@ -29,11 +29,18 @@ class WPIO_CLI extends WP_CLI_Command {
      * [--dry-run]
      * : Preview what would be converted without actually converting.
      *
+     * [--folder=<path>]
+     * : Only process images under this folder, relative to uploads (e.g. 2026/07).
+     *
+     * [--limit=<n>]
+     * : Stop after attempting this many images. Useful on hosts with short request timeouts.
+     *
      * ## EXAMPLES
      *
      *   wp image-optimizer bulk
      *   wp image-optimizer bulk --format=avif --quality=75
      *   wp image-optimizer bulk --dry-run
+     *   wp image-optimizer bulk --folder=2026/07 --limit=50
      *
      * @when after_wp_load
      */
@@ -48,8 +55,23 @@ class WPIO_CLI extends WP_CLI_Command {
 
         // Use the shared scanner so exclusions and custom folders are respected.
         $files = WPIO_Folder_Scanner::get_pending_images( $format );
+        sort( $files );
+
+        if ( ! empty( $assoc_args['folder'] ) ) {
+            $upload_dir = wp_upload_dir();
+            $prefix     = trailingslashit( $upload_dir['basedir'] ) . trim( $assoc_args['folder'], '/' ) . '/';
+            $files      = array_values( array_filter( $files, function( $f ) use ( $prefix ) {
+                return strpos( $f, $prefix ) === 0;
+            } ) );
+        }
+
+        $found = count( $files );
+        if ( ! empty( $assoc_args['limit'] ) ) {
+            $files = array_slice( $files, 0, absint( $assoc_args['limit'] ) );
+        }
+
         $total = count( $files );
-        WP_CLI::log( sprintf( 'Found %d image(s) to process (via configured folders).', $total ) );
+        WP_CLI::log( sprintf( 'Found %d image(s) pending, processing %d.', $found, $total ) );
 
         if ( $dry_run ) {
             WP_CLI::success( 'Dry run complete. No files were converted.' );
@@ -121,7 +143,7 @@ class WPIO_CLI extends WP_CLI_Command {
                 $best = PHP_INT_MAX;
                 $found = false;
                 foreach ( $formats as $fmt ) {
-                    $conv = preg_replace( '/\.(jpe?g|png)$/i', '.' . $fmt, $file->getPathname() );
+                    $conv = WPIO_Converter::converted_path( $file->getPathname(), $fmt );
                     if ( file_exists( $conv ) ) {
                         $found = true;
                         $sz = filesize( $conv );

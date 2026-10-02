@@ -93,9 +93,9 @@ class WPIO_HTML_Rewriter {
 
         // AVIF first for best compression, then WebP.
         foreach ( array_reverse( $formats ) as $fmt ) {
-            $conv_path = preg_replace( '/\.(jpe?g|png)$/i', '.' . $fmt, $file_path );
+            $conv_path = WPIO_Converter::converted_path( $file_path, $fmt );
             if ( file_exists( $conv_path ) ) {
-                $conv_url = preg_replace( '/\.(jpe?g|png)$/i', '.' . $fmt, $src_url );
+                $conv_url = $src_url . '.' . $fmt;
                 $mime     = $fmt === 'avif' ? 'image/avif' : 'image/webp';
                 $sources[] = '<source srcset="' . esc_url( $conv_url ) . '" type="' . esc_attr( $mime ) . '">';
             }

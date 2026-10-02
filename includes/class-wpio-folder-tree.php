@@ -60,8 +60,11 @@ class WPIO_Folder_Tree {
             if ( WPIO_Folder_Scanner::is_excluded_path( $full ) ) continue;
 
             $node['total']++;
-            $conv = preg_replace( '/\.(jpe?g|png|gif)$/i', '.' . $format, $full );
-            if ( file_exists( $conv ) ) $node['converted']++;
+            $done = true;
+            foreach ( WPIO_Converter::get_formats( $format ) as $fmt ) {
+                if ( ! file_exists( WPIO_Converter::converted_path( $full, $fmt ) ) ) { $done = false; break; }
+            }
+            if ( $done ) $node['converted']++;
         }
 
         // Recurse into subdirs

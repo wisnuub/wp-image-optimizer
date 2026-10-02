@@ -23,7 +23,8 @@ class WPIO_Admin {
         add_action( 'admin_post_wpio_dismiss_rewrite_notice', array( 'WPIO_Rewrite', 'handle_dismiss' ) );
         add_action( 'admin_post_wpio_repair_rewrite_rules',   array( 'WPIO_Rewrite', 'handle_repair' ) );
         add_action( WPIO_Rewrite::CRON_HOOK,       array( 'WPIO_Rewrite', 'check_rules' ) );
-        add_action( 'add_attachment',              array( $this, 'on_upload' ) );
+        // Runs after WordPress has generated the thumbnails, so they get converted too.
+        add_filter( 'wp_generate_attachment_metadata', array( $this, 'on_upload' ), 20, 2 );
         new WPIO_Media_Column();
     }
 
@@ -1004,12 +1005,29 @@ class WPIO_Admin {
         }
         WPIO_Stats::bust_cache(); wp_send_json_success();
     }
-    public function on_upload( $attachment_id ) {
-        if ( get_option('wpio_auto_convert','1') !== '1' ) return;
+    public function on_upload( $metadata, $attachment_id ) {
+        if ( get_option('wpio_auto_convert','1') !== '1' ) return $metadata;
         $file = get_attached_file($attachment_id);
-        if ( ! $file ) return;
-        WPIO_Converter::convert( $file, get_option('wpio_format','webp'), (int) get_option('wpio_quality',82) );
+        if ( ! $file ) return $metadata;
+
+        $files = array( $file );
+        // WP keeps the untouched upload as original_image when it creates a -scaled copy.
+        if ( ! empty( $metadata['original_image'] ) ) {
+            $files[] = path_join( dirname( $file ), $metadata['original_image'] );
+        }
+        if ( ! empty( $metadata['sizes'] ) && is_array( $metadata['sizes'] ) ) {
+            foreach ( $metadata['sizes'] as $size ) {
+                if ( ! empty( $size['file'] ) ) $files[] = path_join( dirname( $file ), $size['file'] );
+            }
+        }
+
+        $format  = get_option('wpio_format','webp');
+        $quality = (int) get_option('wpio_quality',82);
+        foreach ( array_unique( $files ) as $path ) {
+            WPIO_Converter::convert( $path, $format, $quality );
+        }
         WPIO_Stats::bust_cache();
+        return $metadata;
     }
 
     /* -- AJAX: Save all settings across all tabs -- */

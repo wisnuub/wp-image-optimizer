@@ -43,13 +43,13 @@ class WPIO_Nginx {
         }
 
         // For 'both': try AVIF first, then WebP, then original.
-        // $1 captures the path without extension; suffix vars include the leading dot.
+        // Converted files keep the original extension (photo.jpg.webp); suffix vars include the leading dot.
         $try_files = '';
         foreach ( array_reverse( $formats ) as $fmt ) {
-            $try_files .= "\$1\$wpio_{$fmt}_suffix\$is_args\$args\n               ";
+            $try_files .= "\$uri\$wpio_{$fmt}_suffix\n               ";
         }
 
-        $output .= "\nlocation ~* ^({$uploads_uri}/.+)\\.(?:jpe?g|png)\$ {\n";
+        $output .= "\nlocation ~* ^{$uploads_uri}/.+\\.(?:jpe?g|png)\$ {\n";
         $output .= "    add_header Vary Accept;\n";
         $output .= "    try_files  {$try_files}\$uri\n";
         $output .= "               =404;\n";

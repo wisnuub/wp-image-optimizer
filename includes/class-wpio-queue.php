@@ -84,9 +84,14 @@ class WPIO_Queue {
 
         self::raise_limits();
 
-        $chunk = array_splice( $queue, 0, $batch_size );
+        for ( $i = 0; $i < $batch_size && ! empty( $queue ); $i++ ) {
+            $file = array_shift( $queue );
 
-        foreach ( $chunk as $file ) {
+            // Persist the shortened queue before converting. If this file kills
+            // the process (out of memory, timeout) the next run moves on instead
+            // of retrying the same file every 30 seconds forever.
+            update_option( self::OPTION_QUEUE, $queue, false );
+
             // Security: ensure the file path still falls within an allowed folder
             // before processing — guards against option poisoning attacks.
             $real_file = realpath( $file );
@@ -100,11 +105,6 @@ class WPIO_Queue {
             if ( ! $real_file || ! $allowed || ! file_exists( $file ) ) {
                 $progress['errors']++;
                 continue;
-            }
-
-            // Backup original if enabled
-            if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
-                WPIO_Backup::backup( $file );
             }
 
             // Convert to all target formats ('both' → webp + avif).
@@ -132,7 +132,6 @@ class WPIO_Queue {
             }
         }
 
-        update_option( self::OPTION_QUEUE, $queue, false );
         update_option( self::OPTION_PROGRESS, $progress, false );
 
         if ( empty( $queue ) ) {
@@ -168,11 +167,13 @@ class WPIO_Queue {
     public static function raise_limits() {
         $memory = get_option( 'wpio_memory_limit', '256M' );
         $time   = (int) get_option( 'wpio_exec_time', 120 );
-        if ( function_exists( 'wp_raise_memory_limit' ) ) {
-            add_filter( 'image_memory_limit', function() use ( $memory ) { return $memory; } );
-            wp_raise_memory_limit( 'image' );
+
+        // Only ever raise the limit — never lower one the host already set higher.
+        $current = WPIO_Environment::parse_memory( (string) ini_get( 'memory_limit' ) );
+        $wanted  = WPIO_Environment::parse_memory( (string) $memory );
+        if ( $current !== -1 && $wanted > $current ) {
+            @ini_set( 'memory_limit', $memory );
         }
-        @ini_set( 'memory_limit', $memory );
         @set_time_limit( $time );
     }
 
