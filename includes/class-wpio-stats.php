@@ -50,7 +50,7 @@ class WPIO_Stats {
                 $all_exist    = true;
                 $best_c_size  = PHP_INT_MAX;
                 foreach ( $formats as $fmt ) {
-                    $conv_path = preg_replace( '/\.(jpe?g|png)$/i', '.' . $fmt, $path );
+                    $conv_path = WPIO_Converter::converted_path( $path, $fmt );
                     if ( file_exists( $conv_path ) ) {
                         $sz = filesize( $conv_path );
                         if ( $sz < $best_c_size ) $best_c_size = $sz;

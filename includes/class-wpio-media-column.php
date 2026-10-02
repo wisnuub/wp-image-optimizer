@@ -48,7 +48,7 @@ class WPIO_Media_Column {
         $best_conv_size    = PHP_INT_MAX;
         $best_conv_label   = '';
         foreach ( $formats as $fmt ) {
-            $conv_path = preg_replace( '/\.(jpe?g|png|gif)$/i', '.' . $fmt, $file );
+            $conv_path = WPIO_Converter::converted_path( $file, $fmt );
             if ( file_exists( $conv_path ) ) {
                 $sz = filesize( $conv_path );
                 $converted_formats[ $fmt ] = $sz;
@@ -192,7 +192,7 @@ class WPIO_Media_Column {
 
         // Delete existing converted files so converter doesn't skip them.
         foreach ( WPIO_Converter::get_formats( $format ) as $fmt ) {
-            $conv = preg_replace( '/\.(jpe?g|png|gif)$/i', '.' . $fmt, $file );
+            $conv = WPIO_Converter::converted_path( $file, $fmt );
             if ( file_exists( $conv ) ) @unlink( $conv );
         }
 
@@ -225,7 +225,7 @@ class WPIO_Media_Column {
 
         // Delete all converted files so they aren't served anymore.
         foreach ( $formats as $fmt ) {
-            $conv = preg_replace( '/\.(jpe?g|png|gif)$/i', '.' . $fmt, $file );
+            $conv = WPIO_Converter::converted_path( $file, $fmt );
             if ( file_exists( $conv ) ) @unlink( $conv );
         }
 

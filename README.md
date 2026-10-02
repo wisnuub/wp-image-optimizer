@@ -1,6 +1,6 @@
 # WP Image Optimizer
 
-> **v1.3** — Convert & serve next-gen images (WebP & AVIF) automatically, without breaking any existing site links.
+> **v1.4** — Convert & serve next-gen images (WebP & AVIF) automatically, without breaking any existing site links.
 
 A free, lightweight WordPress plugin to convert and compress existing images (JPG/PNG) to **WebP** or **AVIF** — without breaking any existing site links.
 
@@ -44,6 +44,19 @@ Instead of replacing image files, the plugin:
 4. Go to **Media → Image Optimizer** and configure
 
 ## Changelog
+
+### v1.4
+- **Changed:** converted files keep the original extension (`photo.jpg` → `photo.jpg.webp`). Previously `photo.jpg` and `photo.png` both mapped to `photo.webp`, and a native `photo.webp` upload was treated as the converted copy and served in place of `photo.jpg`. Files converted by v1.3 are left in place unused; run Bulk Convert again to regenerate them.
+- Fixed: 8-bit (palette) PNG/GIF caused a PHP fatal error in GD's WebP encoder; they are now converted to truecolor with transparency preserved
+- Fixed: a file that crashed the process (out of memory / timeout) was retried every 30s forever — the queue is now saved before each file is converted
+- Fixed: GD now refuses images that won't fit in the PHP memory limit instead of crashing
+- Fixed: "Raise limits" could *lower* a host's higher memory limit to 256M
+- Fixed: phone photos came out rotated/mirrored because EXIF orientation was dropped without being applied
+- Fixed: auto-convert on upload ran before WordPress created thumbnails, so only the full-size original was converted; now converts every generated size
+- Fixed: `Vary: Accept` was added to every response (including HTML pages); now limited to images
+- Rewrite condition uses `%{REQUEST_FILENAME}` instead of `%{DOCUMENT_ROOT}` so it works when the document root differs from the WP root
+- Removed duplicate backup call in the queue (the converter already backs up)
+- WP-CLI: `bulk` gains `--folder=<path>` and `--limit=<n>`
 
 ### v1.3
 - Fixed: Start Bulk Convert button was submitting the settings form instead of triggering bulk conversion (missing `type="button"` attribute)
