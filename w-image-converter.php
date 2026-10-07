@@ -79,3 +79,18 @@ function wpio_delete_converted_with_original( $file ) {
     return $file;
 }
 add_filter( 'wp_delete_file', 'wpio_delete_converted_with_original' );
+
+/**
+ * "Donate" link under the plugin's description on the Plugins screen.
+ *
+ * @param array  $links Row meta links.
+ * @param string $file  Plugin basename.
+ * @return array
+ */
+function wpio_donate_link( $links, $file ) {
+    if ( plugin_basename( __FILE__ ) === $file ) {
+        $links[] = '<a href="https://paypal.me/toast415" target="_blank" rel="noopener">' . esc_html__( 'Donate', 'w-image-converter' ) . '</a>';
+    }
+    return $links;
+}
+add_filter( 'plugin_row_meta', 'wpio_donate_link', 10, 2 );
