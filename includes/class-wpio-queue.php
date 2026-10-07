@@ -42,10 +42,10 @@ class WPIO_Queue {
 
         update_option( self::OPTION_QUEUE, $queue, false );
         update_option( self::OPTION_PROGRESS, array(
-            'total'  => count( $queue ),
-            'done'   => 0,
-            'errors' => 0,
-            'method' => 'idle',
+            'total'   => count( $queue ),
+            'done'    => 0,
+            'errors'  => 0,
+            'skipped' => 0,
         ), false );
         update_option( self::OPTION_RUNNING, 1 );
         WPIO_Stats::bust_cache();
@@ -70,17 +70,25 @@ class WPIO_Queue {
             return array( 'status' => 'idle' );
         }
 
+        // The admin page and WP-Cron can both call this; only one may work at a time.
+        if ( get_transient( 'wpio_queue_lock' ) ) {
+            return array(
+                'status'    => 'running',
+                'progress'  => get_option( self::OPTION_PROGRESS, array( 'total' => 0, 'done' => 0, 'errors' => 0, 'skipped' => 0 ) ),
+                'remaining' => count( get_option( self::OPTION_QUEUE, array() ) ),
+            );
+        }
+        set_transient( 'wpio_queue_lock', 1, 2 * MINUTE_IN_SECONDS );
+
         $queue      = get_option( self::OPTION_QUEUE, array() );
-        $progress   = get_option( self::OPTION_PROGRESS, array( 'total' => 0, 'done' => 0, 'errors' => 0 ) );
+        $progress   = wp_parse_args( get_option( self::OPTION_PROGRESS, array() ), array( 'total' => 0, 'done' => 0, 'errors' => 0, 'skipped' => 0 ) );
         $batch_size = max( 1, (int) get_option( 'wpio_batch_size', 5 ) );
         $sleep_ms   = max( 0, (int) get_option( 'wpio_sleep_time', 500 ) );
         $format     = get_option( 'wpio_format', 'webp' );
         $quality    = (int) get_option( 'wpio_quality', 82 );
-        $use_remote = WPIO_Remote::is_enabled();
 
         // Security: resolve allowed base directories once to validate each queued path.
-        $allowed_bases = array_map( 'realpath', WPIO_Folder_Scanner::get_folders() );
-        $allowed_bases = array_filter( $allowed_bases );
+        $allowed_bases = array_filter( array_map( 'realpath', WPIO_Folder_Scanner::get_folders() ) );
 
         self::raise_limits();
 
@@ -97,42 +105,29 @@ class WPIO_Queue {
             $real_file = realpath( $file );
             $allowed   = false;
             foreach ( $allowed_bases as $base ) {
-                if ( strpos( $real_file . DIRECTORY_SEPARATOR, $base . DIRECTORY_SEPARATOR ) === 0 ) {
+                if ( $real_file && strpos( $real_file . DIRECTORY_SEPARATOR, $base . DIRECTORY_SEPARATOR ) === 0 ) {
                     $allowed = true;
                     break;
                 }
             }
-            if ( ! $real_file || ! $allowed || ! file_exists( $file ) ) {
+            if ( ! $allowed || ! file_exists( $file ) ) {
                 $progress['errors']++;
                 continue;
             }
 
-            // Convert to all target formats ('both' → webp + avif).
-            $formats    = WPIO_Converter::get_formats( $format );
-            $file_error = false;
-            foreach ( $formats as $fmt ) {
-                if ( $use_remote ) {
-                    $result = WPIO_Remote::convert( $file, $fmt, $quality );
-                    if ( is_wp_error( $result ) ) {
-                        $result = WPIO_Converter::convert_local( $file, $fmt, $quality );
-                    }
-                } else {
-                    $result = WPIO_Converter::convert_local( $file, $fmt, $quality );
-                }
-                if ( is_wp_error( $result ) ) {
-                    $file_error = true;
-                    break;
-                }
-            }
-
-            if ( $file_error ) {
-                $progress['errors']++;
-            } else {
+            $result = WPIO_Converter::convert( $file, $format, $quality );
+            if ( ! is_wp_error( $result ) ) {
                 $progress['done']++;
+            } elseif ( 'output_larger' === $result->get_error_code() ) {
+                $progress['skipped']++;
+            } else {
+                $progress['errors']++;
+                $progress['last_error'] = wp_basename( $file ) . ': ' . $result->get_error_message();
             }
         }
 
         update_option( self::OPTION_PROGRESS, $progress, false );
+        delete_transient( 'wpio_queue_lock' );
 
         if ( empty( $queue ) ) {
             update_option( self::OPTION_RUNNING, 0 );
@@ -153,7 +148,7 @@ class WPIO_Queue {
     public static function get_progress() {
         return array(
             'running'   => (bool) get_option( self::OPTION_RUNNING, 0 ),
-            'progress'  => get_option( self::OPTION_PROGRESS, array( 'total' => 0, 'done' => 0, 'errors' => 0 ) ),
+            'progress'  => wp_parse_args( get_option( self::OPTION_PROGRESS, array() ), array( 'total' => 0, 'done' => 0, 'errors' => 0, 'skipped' => 0 ) ),
             'remaining' => count( get_option( self::OPTION_QUEUE, array() ) ),
         );
     }
@@ -161,6 +156,7 @@ class WPIO_Queue {
     public static function cancel() {
         update_option( self::OPTION_RUNNING, 0 );
         update_option( self::OPTION_QUEUE, array() );
+        delete_transient( 'wpio_queue_lock' );
         self::unschedule_cron();
     }
 
@@ -172,9 +168,9 @@ class WPIO_Queue {
         $current = WPIO_Environment::parse_memory( (string) ini_get( 'memory_limit' ) );
         $wanted  = WPIO_Environment::parse_memory( (string) $memory );
         if ( $current !== -1 && $wanted > $current ) {
-            @ini_set( 'memory_limit', $memory );
+            @ini_set( 'memory_limit', $memory ); // phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged, WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.PHP.IniSet.memory_limit_Disallowed -- image decoding needs headroom; only ever raised, never lowered.
         }
-        @set_time_limit( $time );
+        @set_time_limit( $time ); // phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged, WordPress.PHP.NoSilencedErrors.Discouraged -- long-running bulk conversion chunk.
     }
 
     private static function unschedule_cron() {

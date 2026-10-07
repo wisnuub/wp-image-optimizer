@@ -3,11 +3,14 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class WPIO_Folder_Scanner {
 
+    /**
+     * JPG and PNG only: the delivery rules only serve those, and converting an
+     * animated GIF would keep just its first frame.
+     */
     public static function get_allowed_extensions() {
         $exts = array();
         if ( get_option( 'wpio_ext_jpg', '1' ) === '1' ) { $exts[] = 'jpg'; $exts[] = 'jpeg'; }
         if ( get_option( 'wpio_ext_png', '1' ) === '1' ) { $exts[] = 'png'; }
-        if ( get_option( 'wpio_ext_gif', '0' ) === '1' ) { $exts[] = 'gif'; }
         return ! empty( $exts ) ? $exts : array( 'jpg', 'jpeg', 'png' );
     }
 
@@ -120,7 +123,7 @@ class WPIO_Folder_Scanner {
                 if ( ! in_array( $ext, $allowed ) ) continue;
                 $total++;
                 // WP thumbnail pattern: filename-NNNxNNN.ext
-                if ( preg_match( '/-\d+x\d+\.(?:jpe?g|png|gif)$/i', $file->getBasename() ) ) {
+                if ( preg_match( '/-\d+x\d+\.(?:jpe?g|png)$/i', $file->getBasename() ) ) {
                     $thumbs++;
                 }
             }
@@ -131,21 +134,24 @@ class WPIO_Folder_Scanner {
     }
 
     /**
-     * Check if all target format files exist for a given source path.
-     * For 'both', all formats must exist; for single format, just that one.
+     * Whether every target format has an up-to-date converted copy.
      */
     private static function has_all_conversions( $path, $formats ) {
         foreach ( $formats as $fmt ) {
-            $conv = WPIO_Converter::converted_path( $path, $fmt );
-            if ( ! file_exists( $conv ) ) return false;
+            if ( ! WPIO_Converter::is_converted( $path, $fmt ) ) return false;
         }
         return true;
     }
 
+    /**
+     * Images still needing conversion — excluding ones already skipped
+     * (failed, or the result was larger) unless they changed since.
+     */
     public static function get_pending_images( $format = 'webp' ) {
         $formats = WPIO_Converter::get_formats( $format );
         $files   = array();
         $allowed = self::get_allowed_extensions();
+        $skipped = get_option( WPIO_Converter::SKIP_OPTION, array() );
 
         foreach ( self::get_folders() as $dir ) {
             if ( ! is_dir( $dir ) ) continue;
@@ -159,6 +165,7 @@ class WPIO_Folder_Scanner {
                 $ext = strtolower( $file->getExtension() );
                 if ( ! in_array( $ext, $allowed ) ) continue;
                 if ( self::has_all_conversions( $path, $formats ) ) continue;
+                if ( $skipped && WPIO_Converter::is_skipped( $path, $skipped ) ) continue;
                 $files[] = $path;
             }
         }
@@ -170,7 +177,9 @@ class WPIO_Folder_Scanner {
         $formats   = WPIO_Converter::get_formats( $format );
         $total     = 0;
         $converted = 0;
+        $skipped   = 0;
         $allowed   = self::get_allowed_extensions();
+        $skip_list = get_option( WPIO_Converter::SKIP_OPTION, array() );
 
         foreach ( self::get_folders() as $dir ) {
             if ( ! is_dir( $dir ) ) continue;
@@ -184,10 +193,14 @@ class WPIO_Folder_Scanner {
                 $ext = strtolower( $file->getExtension() );
                 if ( ! in_array( $ext, $allowed ) ) continue;
                 $total++;
-                if ( self::has_all_conversions( $path, $formats ) ) $converted++;
+                if ( self::has_all_conversions( $path, $formats ) ) {
+                    $converted++;
+                } elseif ( $skip_list && WPIO_Converter::is_skipped( $path, $skip_list ) ) {
+                    $skipped++;
+                }
             }
         }
 
-        return array( 'total' => $total, 'converted' => $converted, 'pending' => $total - $converted );
+        return array( 'total' => $total, 'converted' => $converted, 'skipped' => $skipped, 'pending' => $total - $converted - $skipped );
     }
 }

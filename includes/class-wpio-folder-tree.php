@@ -62,7 +62,7 @@ class WPIO_Folder_Tree {
             $node['total']++;
             $done = true;
             foreach ( WPIO_Converter::get_formats( $format ) as $fmt ) {
-                if ( ! file_exists( WPIO_Converter::converted_path( $full, $fmt ) ) ) { $done = false; break; }
+                if ( ! WPIO_Converter::is_converted( $full, $fmt ) ) { $done = false; break; }
             }
             if ( $done ) $node['converted']++;
         }

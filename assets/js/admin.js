@@ -1,4 +1,4 @@
-/* WP Image Optimizer — Admin JS */
+/* W Image Converter — Admin JS */
 (function($){
   'use strict';
 
@@ -58,16 +58,18 @@
     $circle.attr('stroke-dasharray', dash + ' ' + gap);
     $circle.attr('stroke-dashoffset', offset);
     $('#wpio-ring-pct-text').text(pct + '%');
-    $('#wpio-ring-label').text(pct + '% converted');
+    $('#wpio-ring-label').text(pct + '% done');
   }
 
-  function updateProgress(done, total, errors){
-    var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  function updateProgress(p){
+    var processed = p.done + (p.skipped || 0) + p.errors;
+    var pct = p.total > 0 ? Math.round((processed / p.total) * 100) : 0;
     $('#wpio-prog-bar').css('width', pct + '%').text(pct + '%');
     $('.wpio-progress-wrap').attr('aria-valuenow', pct);
-    $('#wpio-prog-text').text(done + ' / ' + total + ' images processed' + (errors > 0 ? ' · ' + errors + ' errors' : ''));
-    updateRing(pct);
-    var remaining = total - done;
+    $('#wpio-prog-text').text(processed + ' / ' + p.total + ' images processed · ' + p.done + ' converted'
+      + (p.skipped ? ' · ' + p.skipped + ' kept as original (not smaller)' : '')
+      + (p.errors > 0 ? ' · ' + p.errors + ' errors' : ''));
+    var remaining = p.total - processed;
     if (remaining >= 0) $('#wpio-ring-sub').text(remaining + ' images remaining');
   }
 
@@ -86,13 +88,14 @@
 
       // Fix #5: log per-chunk error count changes
       var newErrors = d.progress.errors - prevErrors;
-      if (newErrors > 0) addLog(newErrors + ' error(s) in this chunk', 'log-error');
+      if (newErrors > 0) addLog(newErrors + ' error(s) in this chunk' + (d.progress.last_error ? ' — last: ' + d.progress.last_error : ''), 'log-error');
       prevErrors = d.progress.errors;
 
-      updateProgress(d.progress.done, d.progress.total, d.progress.errors);
+      updateProgress(d.progress);
       if (d.status === 'done') {
-        addLog('All done! Converted: ' + d.progress.done + ' / Errors: ' + d.progress.errors, 'log-ok');
+        addLog('All done! Converted: ' + d.progress.done + ' · Kept as original: ' + (d.progress.skipped || 0) + ' · Errors: ' + d.progress.errors, 'log-ok');
         stopRunning();
+        setTimeout(function(){ location.reload(); }, 1500);
       } else if (d.status === 'running') {
         addLog('Chunk done - ' + d.remaining + ' remaining...', 'log-info');
         pollTimer = setTimeout(processChunk, 600);
@@ -135,14 +138,45 @@
 
   if (running) { addLog('Resuming from background...', 'log-warn'); processChunk(); }
 
-  /* ── Purge backups ── */
+  /* ── Delete the old (1.4) backup folder ── */
   $('#wpio-purge-backups').on('click', function(){
-    if (!confirm('Delete all backups? This cannot be undone.')) return;
+    if (!confirm('Delete the old backup folder? Your original images are not affected.')) return;
     var $btn = $(this);
-    $btn.prop('disabled', true).text('Purging…');
-    $.post(ajaxurl, { action: 'wpio_delete_backup', scope: 'all', _wpnonce: $btn.data('nonce') }, function(res){
-      res.success ? location.reload() : (alert('Error: ' + res.data), $btn.prop('disabled', false).text('🗑 Purge All Backups'));
+    $btn.prop('disabled', true).text('Deleting…');
+    $.post(ajaxurl, { action: 'wpio_delete_backup', _wpnonce: $btn.data('nonce') }, function(res){
+      res.success ? location.reload() : (alert('Error: ' + res.data), $btn.prop('disabled', false).text('🗑 Delete old backups'));
     });
+  });
+
+  /* ── Delivery self-test ── */
+  $(document).on('click', '#wpio-test-delivery', function(){
+    var $btn = $(this), $out = $('#wpio-test-result');
+    $btn.prop('disabled', true);
+    $out.css('color', '#666').text('Testing…');
+    $.post(ajaxurl, { action: 'wpio_test_delivery', _wpnonce: wpioData.nonceTest }).done(function(res){
+      if (res.success) {
+        $out.css('color', res.data.ok ? '#155724' : '#b32d2e').text((res.data.ok ? '✅ ' : '❌ ') + res.data.message);
+      } else {
+        $out.css('color', '#b32d2e').text('⚠️ ' + res.data);
+      }
+    }).fail(function(){
+      $out.css('color', '#b32d2e').text('⚠️ Request failed.');
+    }).always(function(){ $btn.prop('disabled', false); });
+  });
+
+  /* ── Delete all converted files (batched) ── */
+  $(document).on('click', '#wpio-delete-converted', function(){
+    if (!confirm('Delete all converted WebP/AVIF files? Originals will be served again.')) return;
+    var $btn = $(this), $out = $('#wpio-delete-converted-status'), total = 0;
+    $btn.prop('disabled', true);
+    (function step(){
+      $.post(ajaxurl, { action: 'wpio_delete_converted', _wpnonce: wpioData.nonceDeleteConv }).done(function(res){
+        if (!res.success) { $out.text('Error: ' + res.data); $btn.prop('disabled', false); return; }
+        total += res.data.deleted;
+        $out.text(total + ' file(s) deleted' + (res.data.more ? '…' : '.'));
+        if (res.data.more) { step(); } else { $btn.prop('disabled', false); }
+      }).fail(function(){ $out.text('Request failed.'); $btn.prop('disabled', false); });
+    })();
   });
 
   /* ── Tab switching (General / Advanced / Delivery) ── */

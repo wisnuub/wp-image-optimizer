@@ -124,7 +124,7 @@ class WPIO_Environment {
 
     public static function check_uploads_writable() {
         $upload_dir = wp_upload_dir();
-        $ok         = is_writable( $upload_dir['basedir'] );
+        $ok         = wp_is_writable( $upload_dir['basedir'] );
         return array(
             'label'   => 'Uploads Folder Writable',
             'value'   => $ok ? 'Writable' : 'Not writable',
@@ -134,9 +134,9 @@ class WPIO_Environment {
     }
 
     public static function check_htaccess_writable() {
-        $upload_dir = wp_upload_dir();
-        $htaccess   = $upload_dir['basedir'] . '/.htaccess';
-        $ok         = ( file_exists( $htaccess ) && is_writable( $htaccess ) ) || is_writable( $upload_dir['basedir'] );
+        // Rules go in the site root .htaccess (see WPIO_Rewrite::htaccess_path()).
+        $htaccess   = ABSPATH . '.htaccess';
+        $ok         = file_exists( $htaccess ) ? wp_is_writable( $htaccess ) : wp_is_writable( ABSPATH );
         return array(
             'label'   => '.htaccess Writable',
             'value'   => $ok ? 'Writable' : 'Not writable',
@@ -193,7 +193,7 @@ class WPIO_Environment {
     public static function admin_notice() {
         foreach ( self::check() as $item ) {
             if ( $item['status'] === 'error' ) {
-                echo '<div class="notice notice-error"><p><strong>WP Image Optimizer:</strong> ' . esc_html( $item['message'] ) . '</p></div>';
+                echo '<div class="notice notice-error"><p><strong>W Image Converter:</strong> ' . esc_html( $item['message'] ) . '</p></div>';
             }
         }
     }

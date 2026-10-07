@@ -3,9 +3,14 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
  * Handles local image conversion to WebP / AVIF.
- * Supported extensions are read dynamically from plugin options.
+ *
+ * Originals are never modified: each conversion writes a sibling file
+ * (photo.jpg -> photo.jpg.webp) that the delivery layer serves instead.
  */
 class WPIO_Converter {
+
+    /** Option holding files that can't or shouldn't be converted, so they aren't retried forever. */
+    const SKIP_OPTION = 'wpio_skipped';
 
     /**
      * Expand a format value into an array of concrete formats.
@@ -25,18 +30,19 @@ class WPIO_Converter {
         return $source_path . '.' . $format;
     }
 
+    /**
+     * Whether an up-to-date converted copy exists (newer than the original, so
+     * replacing the original with a new file of the same name triggers a redo).
+     */
+    public static function is_converted( $source_path, $format ) {
+        $dest = self::converted_path( $source_path, $format );
+        return file_exists( $dest ) && filemtime( $dest ) >= filemtime( $source_path );
+    }
+
     public static function convert( $source_path, $format = 'webp', $quality = 82 ) {
-        $formats = self::get_formats( $format );
-        $last    = null;
-        foreach ( $formats as $fmt ) {
-            if ( WPIO_Remote::is_enabled() ) {
-                $result = WPIO_Remote::convert( $source_path, $fmt, $quality );
-                if ( is_wp_error( $result ) ) {
-                    $result = self::convert_local( $source_path, $fmt, $quality );
-                }
-            } else {
-                $result = self::convert_local( $source_path, $fmt, $quality );
-            }
+        $last = null;
+        foreach ( self::get_formats( $format ) as $fmt ) {
+            $result = self::convert_local( $source_path, $fmt, $quality );
             if ( is_wp_error( $result ) ) return $result;
             $last = $result;
         }
@@ -49,34 +55,102 @@ class WPIO_Converter {
         }
 
         $dest_path = self::converted_path( $source_path, $format );
+        if ( self::is_converted( $source_path, $format ) ) return $dest_path;
 
-        if ( file_exists( $dest_path ) ) return $dest_path;
-
-        $ext     = strtolower( pathinfo( $source_path, PATHINFO_EXTENSION ) );
-        $allowed = class_exists( 'WPIO_Folder_Scanner' )
-            ? WPIO_Folder_Scanner::get_allowed_extensions()
-            : array( 'jpg', 'jpeg', 'png', 'gif' );
-
-        if ( ! in_array( $ext, $allowed ) ) {
+        $ext = strtolower( pathinfo( $source_path, PATHINFO_EXTENSION ) );
+        if ( ! in_array( $ext, WPIO_Folder_Scanner::get_allowed_extensions(), true ) ) {
             return new WP_Error( 'unsupported_type', 'Unsupported or disabled image type: ' . $ext );
-        }
-
-        if ( get_option( 'wpio_backup_enabled', '1' ) === '1' ) {
-            WPIO_Backup::backup( $source_path );
         }
 
         WPIO_Queue::raise_limits();
 
         $method = get_option( 'wpio_conversion_method', 'auto' );
-
-        if ( $method === 'imagick' || ( $method === 'auto' && extension_loaded( 'imagick' ) ) ) {
-            return self::convert_imagick( $source_path, $dest_path, $format, $quality );
+        if ( $method === 'imagick' || ( $method === 'auto' && extension_loaded( 'imagick' ) && self::imagick_supports( $format ) ) ) {
+            $result = self::convert_imagick( $source_path, $dest_path, $format, $quality );
         } elseif ( $method === 'gd' || ( $method === 'auto' && extension_loaded( 'gd' ) ) ) {
-            return self::convert_gd( $source_path, $dest_path, $format, $quality );
+            $result = self::convert_gd( $source_path, $dest_path, $format, $quality );
+        } else {
+            $result = new WP_Error( 'no_library', 'Neither GD nor Imagick is available.' );
         }
 
-        return new WP_Error( 'no_library', 'Neither GD nor Imagick is available.' );
+        if ( is_wp_error( $result ) ) {
+            // Remember the failure so bulk runs don't retry this file forever.
+            if ( ! in_array( $result->get_error_code(), array( 'no_library', 'file_not_found' ), true ) ) {
+                self::mark_skipped( $source_path, $result->get_error_message() );
+            }
+        } else {
+            self::unmark_skipped( $source_path );
+        }
+        return $result;
     }
+
+    private static function imagick_supports( $format ) {
+        try {
+            return ! empty( Imagick::queryFormats( strtoupper( $format ) ) );
+        } catch ( Exception $e ) {
+            return false;
+        }
+    }
+
+    /* -------------------------------------------------------
+       Skip list
+    ------------------------------------------------------- */
+
+    private static function skip_key( $path ) {
+        return md5( $path );
+    }
+
+    public static function mark_skipped( $path, $reason ) {
+        $list = get_option( self::SKIP_OPTION, array() );
+        $list[ self::skip_key( $path ) ] = array(
+            'file'   => wp_basename( $path ),
+            'reason' => $reason,
+            'mtime'  => (int) @filemtime( $path ),
+        );
+        update_option( self::SKIP_OPTION, $list, false );
+    }
+
+    public static function unmark_skipped( $path ) {
+        $list = get_option( self::SKIP_OPTION, array() );
+        $key  = self::skip_key( $path );
+        if ( isset( $list[ $key ] ) ) {
+            unset( $list[ $key ] );
+            update_option( self::SKIP_OPTION, $list, false );
+        }
+    }
+
+    /**
+     * Skipped, unless the file changed since — then it deserves another try.
+     *
+     * @param array|null $list Pre-loaded skip list (avoids an option read per file).
+     */
+    public static function is_skipped( $path, $list = null ) {
+        if ( null === $list ) $list = get_option( self::SKIP_OPTION, array() );
+        $entry = $list[ self::skip_key( $path ) ] ?? null;
+        return $entry && (int) $entry['mtime'] === (int) @filemtime( $path );
+    }
+
+    public static function clear_skipped() {
+        delete_option( self::SKIP_OPTION );
+    }
+
+    public static function skipped_count() {
+        return count( get_option( self::SKIP_OPTION, array() ) );
+    }
+
+    /**
+     * Delete the converted copies of a file (used by "Use original" and on deletion).
+     */
+    public static function delete_converted( $source_path ) {
+        foreach ( array( 'webp', 'avif' ) as $fmt ) {
+            $conv = self::converted_path( $source_path, $fmt );
+            if ( file_exists( $conv ) ) wp_delete_file( $conv );
+        }
+    }
+
+    /* -------------------------------------------------------
+       Conversion
+    ------------------------------------------------------- */
 
     /**
      * Returns the target resize dimensions [new_w, new_h] or null if no resize needed.
@@ -103,27 +177,26 @@ class WPIO_Converter {
     }
 
     /**
-     * Check if the converted file is genuinely smaller than the source.
+     * Discard the converted file when it isn't smaller than the source
+     * (unless the "skip if larger" setting is off).
      */
-    private static function is_size_acceptable( $src, $dest ) {
-        if ( ! file_exists( $dest ) ) return false;
-        return filesize( $dest ) < filesize( $src );
-    }
-
     private static function discard_if_larger( $src, $dest ) {
-        if ( ! self::is_size_acceptable( $src, $dest ) ) {
-            $dest_size = file_exists( $dest ) ? filesize( $dest ) : 0;
-            @unlink( $dest );
-            return new WP_Error(
-                'output_larger',
-                sprintf(
-                    'Converted file (%s) is not smaller than original (%s) — skipped to preserve quality.',
-                    size_format( $dest_size ),
-                    size_format( filesize( $src ) )
-                )
-            );
-        }
-        return null;
+        if ( get_option( 'wpio_remove_if_larger', '1' ) !== '1' ) return null;
+        if ( ! file_exists( $dest ) ) return null;
+
+        $dest_size = filesize( $dest );
+        $src_size  = filesize( $src );
+        if ( $dest_size < $src_size ) return null;
+
+        wp_delete_file( $dest );
+        return new WP_Error(
+            'output_larger',
+            sprintf(
+                'Converted file (%s) is not smaller than the original (%s), so the original is kept.',
+                size_format( $dest_size ),
+                size_format( $src_size )
+            )
+        );
     }
 
     /**
@@ -148,7 +221,7 @@ class WPIO_Converter {
             return new WP_Error(
                 'too_large',
                 sprintf(
-                    '%s is %dx%d (~%dMB to decode) which exceeds the PHP memory limit (%s). Raise the memory limit in Expert settings.',
+                    '%s is %dx%d (~%dMB to decode) which exceeds the PHP memory limit (%s). Raise the memory limit in Advanced settings.',
                     basename( $src ), $size[0], $size[1], (int) ( $needed / 1048576 ), ini_get( 'memory_limit' )
                 )
             );
@@ -188,7 +261,6 @@ class WPIO_Converter {
         if ( $angle ) {
             $rotated = imagerotate( $image, $angle, 0 );
             if ( $rotated ) {
-                imagedestroy( $image );
                 $image = $rotated;
                 imagealphablending( $image, false );
                 imagesavealpha( $image, true );
@@ -199,20 +271,26 @@ class WPIO_Converter {
     }
 
     private static function convert_gd( $src, $dest, $format, $quality ) {
+        if ( $format === 'webp' && ! function_exists( 'imagewebp' ) ) {
+            return new WP_Error( 'gd_no_webp', 'GD on this server cannot write WebP.' );
+        }
+        if ( $format === 'avif' && ! function_exists( 'imageavif' ) ) {
+            return new WP_Error( 'gd_no_avif', 'GD on this server cannot write AVIF (needs PHP 8.1+ built with libavif).' );
+        }
+
         $too_large = self::gd_memory_check( $src );
         if ( is_wp_error( $too_large ) ) return $too_large;
 
         $ext = strtolower( pathinfo( $src, PATHINFO_EXTENSION ) );
         switch ( $ext ) {
             case 'jpg':
-            case 'jpeg': $image = imagecreatefromjpeg( $src ); break;
-            case 'png':  $image = imagecreatefrompng( $src );  break;
-            case 'gif':  $image = imagecreatefromgif( $src );  break;
+            case 'jpeg': $image = @imagecreatefromjpeg( $src ); break;
+            case 'png':  $image = @imagecreatefrompng( $src );  break;
             default: return new WP_Error( 'unsupported', 'Unsupported format: ' . $ext );
         }
-        if ( ! $image ) return new WP_Error( 'gd_create_failed', 'GD could not open image.' );
+        if ( ! $image ) return new WP_Error( 'gd_create_failed', 'GD could not open image: ' . basename( $src ) );
 
-        // WebP can't be written from palette images (8-bit PNG/GIF); keep transparency.
+        // WebP can't be written from palette images (8-bit PNG); keep transparency.
         if ( ! imageistruecolor( $image ) ) imagepalettetotruecolor( $image );
         imagealphablending( $image, false );
         imagesavealpha( $image, true );
@@ -220,13 +298,8 @@ class WPIO_Converter {
         $image = self::apply_orientation_gd( $image, self::get_orientation( $src ) );
         $image = self::maybe_resize_gd( $image );
 
-        $result = false;
-        if ( $format === 'webp' && function_exists( 'imagewebp' ) ) {
-            $result = imagewebp( $image, $dest, $quality );
-        } elseif ( $format === 'avif' && function_exists( 'imageavif' ) ) {
-            $result = imageavif( $image, $dest, $quality );
-        }
-        imagedestroy( $image );
+        $result = $format === 'avif' ? imageavif( $image, $dest, $quality ) : imagewebp( $image, $dest, $quality );
+        unset( $image );
         if ( ! $result ) return new WP_Error( 'gd_convert_failed', 'GD conversion failed for: ' . basename( $src ) );
 
         $size_check = self::discard_if_larger( $src, $dest );
@@ -250,7 +323,6 @@ class WPIO_Converter {
             $im->setFormat( strtoupper( $format ) );
             $im->writeImage( $dest );
             $im->clear();
-            $im->destroy();
 
             $size_check = self::discard_if_larger( $src, $dest );
             if ( is_wp_error( $size_check ) ) return $size_check;
@@ -288,27 +360,6 @@ class WPIO_Converter {
         imagealphablending( $resized, false );
         imagesavealpha( $resized, true );
         imagecopyresampled( $resized, $image, 0, 0, 0, 0, $new_w, $new_h, $w, $h );
-        imagedestroy( $image );
         return $resized;
-    }
-
-    public static function batch_convert( $format = 'webp', $quality = 82 ) {
-        $formats = self::get_formats( $format );
-        $all_pending = array();
-        foreach ( $formats as $fmt ) {
-            foreach ( WPIO_Folder_Scanner::get_pending_images( $fmt ) as $path ) {
-                $all_pending[ $path ] = true;
-            }
-        }
-        $results = array( 'success' => array(), 'skipped' => array(), 'error' => array() );
-        foreach ( array_keys( $all_pending ) as $path ) {
-            $result = self::convert( $path, $format, $quality );
-            if ( is_wp_error( $result ) ) {
-                $results['error'][] = array( 'file' => basename( $path ), 'error' => $result->get_error_message() );
-            } else {
-                $results['success'][] = basename( $path );
-            }
-        }
-        return $results;
     }
 }

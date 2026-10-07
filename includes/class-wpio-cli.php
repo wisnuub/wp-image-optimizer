@@ -2,11 +2,11 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * WP-CLI command: wp image-optimizer
+ * WP-CLI command: wp image-converter
  * Usage:
- *   wp image-optimizer bulk [--format=webp] [--quality=82] [--dry-run]
- *   wp image-optimizer status
- *   wp image-optimizer restore [--id=<attachment_id>]
+ *   wp image-converter bulk [--format=webp] [--quality=82] [--dry-run]
+ *   wp image-converter status
+ *   wp image-converter revert --id=<attachment_id>
  */
 if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) return;
 
@@ -37,10 +37,10 @@ class WPIO_CLI extends WP_CLI_Command {
      *
      * ## EXAMPLES
      *
-     *   wp image-optimizer bulk
-     *   wp image-optimizer bulk --format=avif --quality=75
-     *   wp image-optimizer bulk --dry-run
-     *   wp image-optimizer bulk --folder=2026/07 --limit=50
+     *   wp image-converter bulk
+     *   wp image-converter bulk --format=avif --quality=75
+     *   wp image-converter bulk --dry-run
+     *   wp image-converter bulk --folder=2026/07 --limit=50
      *
      * @when after_wp_load
      */
@@ -86,7 +86,7 @@ class WPIO_CLI extends WP_CLI_Command {
         foreach ( $files as $file ) {
             $result = WPIO_Converter::convert( $file, $format, $quality );
             if ( is_wp_error( $result ) ) {
-                if ( $result->get_error_code() === 'file_not_found' ) {
+                if ( in_array( $result->get_error_code(), array( 'file_not_found', 'output_larger' ), true ) ) {
                     $skipped++;
                 } else {
                     $errors[] = basename( $file ) . ': ' . $result->get_error_message();
@@ -114,7 +114,7 @@ class WPIO_CLI extends WP_CLI_Command {
      *
      * ## EXAMPLES
      *
-     *   wp image-optimizer status
+     *   wp image-converter status
      *
      * @when after_wp_load
      */
@@ -163,39 +163,46 @@ class WPIO_CLI extends WP_CLI_Command {
             array( 'Metric' => 'Format',        'Value' => strtoupper( $format ) ),
             array( 'Metric' => 'Total images',  'Value' => $total ),
             array( 'Metric' => 'Converted',     'Value' => $done ),
+            array( 'Metric' => 'Original kept', 'Value' => $counts['skipped'] ),
             array( 'Metric' => 'Pending',       'Value' => $pending ),
             array( 'Metric' => 'Total saved',   'Value' => $saved_kb . ' KB (' . $saved_mb . ' MB)' ),
         ), array( 'Metric', 'Value' ) );
     }
 
     /**
-     * Restore original image from backup for a specific attachment.
+     * Remove the converted copies of an attachment so the original is served.
      *
      * ## OPTIONS
      *
-     * [--id=<attachment_id>]
-     * : Attachment ID to restore. If omitted, restores all.
+     * --id=<attachment_id>
+     * : Attachment ID.
      *
      * ## EXAMPLES
      *
-     *   wp image-optimizer restore --id=42
+     *   wp image-converter revert --id=42
      *
      * @when after_wp_load
      */
-    public function restore( $args, $assoc_args ) {
-        $id = isset( $assoc_args['id'] ) ? absint( $assoc_args['id'] ) : null;
-        if ( $id ) {
-            $file   = get_attached_file( $id );
-            $result = WPIO_Backup::restore( $file );
-            if ( is_wp_error( $result ) ) {
-                WP_CLI::error( $result->get_error_message() );
-            } else {
-                WP_CLI::success( 'Restored: ' . basename( $file ) );
-            }
-        } else {
-            WP_CLI::error( 'Please provide --id=<attachment_id>. Bulk restore via CLI is not yet supported.' );
+    public function revert( $args, $assoc_args ) {
+        $id   = isset( $assoc_args['id'] ) ? absint( $assoc_args['id'] ) : 0;
+        $file = $id ? get_attached_file( $id ) : '';
+        if ( ! $file ) {
+            WP_CLI::error( 'Please provide a valid --id=<attachment_id>.' );
         }
+
+        $files = array( $file );
+        $meta  = wp_get_attachment_metadata( $id );
+        if ( is_array( $meta ) ) {
+            foreach ( (array) ( $meta['sizes'] ?? array() ) as $size ) {
+                if ( ! empty( $size['file'] ) ) $files[] = dirname( $file ) . '/' . $size['file'];
+            }
+        }
+        foreach ( $files as $path ) {
+            WPIO_Converter::delete_converted( $path );
+        }
+        WPIO_Stats::bust_cache();
+        WP_CLI::success( 'Now serving the original: ' . basename( $file ) );
     }
 }
 
-WP_CLI::add_command( 'image-optimizer', 'WPIO_CLI' );
+WP_CLI::add_command( 'image-converter', 'WPIO_CLI' );

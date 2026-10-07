@@ -10,11 +10,12 @@ if ( ! defined( 'ABSPATH' ) ) exit;
  */
 class WPIO_Rewrite {
 
-    const MARKER       = 'WP Image Optimizer';
-    const TAMPER_KEY   = 'wpio_rewrite_tampered';
-    const DISMISS_KEY  = 'wpio_rewrite_notice_dismissed';
-    const CRON_HOOK    = 'wpio_check_rewrite_rules';
-    const RULES_VER    = 3; // bump when build_rules() output changes
+    const MARKER        = 'W Image Converter';
+    const LEGACY_MARKER = 'WP Image Optimizer'; // used by 1.4 and earlier
+    const TAMPER_KEY    = 'wpio_rewrite_tampered';
+    const DISMISS_KEY   = 'wpio_rewrite_notice_dismissed';
+    const CRON_HOOK     = 'wpio_check_rewrite_rules';
+    const RULES_VER     = 4; // bump when build_rules() output changes
     const RULES_VER_KEY = 'wpio_rewrite_rules_ver';
 
     /* -------------------------------------------------------
@@ -56,6 +57,7 @@ class WPIO_Rewrite {
         self::load_misc();
         $htaccess = self::htaccess_path();
         $rules    = self::build_rules( $format );
+        self::remove_legacy_block( $htaccess );
         if ( ! insert_with_markers( $htaccess, self::MARKER, $rules ) ) return;
         // Rules just (re)written — clear any tamper flag and store current version.
         delete_option( self::TAMPER_KEY );
@@ -66,7 +68,26 @@ class WPIO_Rewrite {
     public static function remove_rules() {
         self::load_misc();
         $htaccess = self::htaccess_path();
-        insert_with_markers( $htaccess, self::MARKER, array() );
+        self::remove_legacy_block( $htaccess );
+        if ( file_exists( $htaccess ) ) {
+            insert_with_markers( $htaccess, self::MARKER, array() );
+        }
+    }
+
+    /**
+     * Strip the whole "# BEGIN WP Image Optimizer … # END" block left by
+     * older versions (insert_with_markers() would only empty it).
+     */
+    private static function remove_legacy_block( $htaccess ) {
+        if ( ! file_exists( $htaccess ) || ! wp_is_writable( $htaccess ) ) return;
+        $content = file_get_contents( $htaccess );
+        if ( strpos( $content, '# BEGIN ' . self::LEGACY_MARKER ) === false ) return;
+
+        $marker = preg_quote( self::LEGACY_MARKER, '/' );
+        $clean  = preg_replace( '/\R?# BEGIN ' . $marker . '.*?# END ' . $marker . '\R?/s', "\n", $content );
+        if ( is_string( $clean ) ) {
+            file_put_contents( $htaccess, $clean );
+        }
     }
 
     /**
@@ -106,6 +127,12 @@ class WPIO_Rewrite {
         $content = file_get_contents( $htaccess );
         $marker  = '# BEGIN ' . self::MARKER;
 
+        // Upgrading from 1.4: swap the old-named block for the new one.
+        if ( strpos( $content, '# BEGIN ' . self::LEGACY_MARKER ) !== false ) {
+            self::insert_rules( get_option( 'wpio_format', 'webp' ) );
+            return;
+        }
+
         if ( strpos( $content, $marker ) === false ) {
             update_option( self::TAMPER_KEY, 'rules_missing' );
             return;
@@ -138,10 +165,10 @@ class WPIO_Rewrite {
         if ( ! $tamper ) return;
 
         $msg = $tamper === 'missing_file'
-            ? 'WP Image Optimizer could not find your <code>.htaccess</code> file. Images may not be served in WebP/AVIF format.'
-            : 'WP Image Optimizer\'s rewrite rules have been removed from <code>.htaccess</code>. Images may be falling back to their original format.';
+            ? 'W Image Converter could not find your <code>.htaccess</code> file. Images may not be served in WebP/AVIF format.'
+            : 'W Image Converter\'s rewrite rules have been removed from <code>.htaccess</code>. Images may be falling back to their original format.';
 
-        $delivery_url = admin_url( 'upload.php?page=wp-image-optimizer&tab=delivery' );
+        $delivery_url = admin_url( 'upload.php?page=w-image-converter&tab=delivery' );
         $dismiss_url  = wp_nonce_url(
             admin_url( 'admin-post.php?action=wpio_dismiss_rewrite_notice' ),
             'wpio_dismiss_rewrite_notice'
@@ -154,7 +181,7 @@ class WPIO_Rewrite {
         <div class="wpio-admin-notice" id="wpio-rewrite-notice">
             <span class="wpio-notice-icon">⚠️</span>
             <div class="wpio-notice-body">
-                <strong>Image Optimizer — Rewrite Rules Modified</strong>
+                <strong>W Image Converter — Rewrite Rules Modified</strong>
                 <span class="wpio-notice-sep">·</span>
                 <span><?php echo wp_kses( $msg, array( 'code' => array() ) ); ?></span>
             </div>

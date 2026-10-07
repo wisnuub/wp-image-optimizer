@@ -1,49 +1,51 @@
-# WP Image Optimizer
+# W Image Converter
 
-> **v1.4** — Convert & serve next-gen images (WebP & AVIF) automatically, without breaking any existing site links.
-
-A free, lightweight WordPress plugin to convert and compress existing images (JPG/PNG) to **WebP** or **AVIF** — without breaking any existing site links.
+> **v1.5.0** — Convert JPG/PNG images to WebP or AVIF and serve them automatically, without changing image URLs or touching your originals. (Formerly "WP Image Optimizer".)
 
 ## How It Works
 
-Instead of replacing image files, the plugin:
+1. A converted copy is saved next to each image: `photo.jpg` → `photo.jpg.webp`. Originals are never modified.
+2. Browsers that support WebP/AVIF get the smaller copy under the same URL; others get the original.
+3. Copies that aren't smaller than the original are discarded, and the original is kept.
 
-1. Generates a `.webp` (or `.avif`) copy of each image alongside the original.
-2. Injects `.htaccess` rewrite rules in the uploads folder:
-   - If a browser supports WebP/AVIF (via the `Accept` header), requests to `.jpg` / `.png` URLs are transparently served the converted file.
-   - If the browser doesn't support it, the original file is served — no broken links, ever.
-3. Optionally auto-converts images on upload.
+Delivery options: Apache/LiteSpeed `.htaccess` rules, a two-part Nginx config, or HTML rewriting to `<picture>` (keeps responsive `srcset`/`sizes`; works on managed hosts and behind CDNs).
 
 ## Features
 
-- ✅ Convert existing uploads (bulk) or on-upload automatically
-- ✅ Choose WebP or AVIF output
-- ✅ Configurable quality (1–100)
-- ✅ Zero broken links — original URLs kept, served via `.htaccess` rewrite
-- ✅ Works with GD or Imagick, with manual method selector
-- ✅ Supported file extensions selector (JPG, PNG, GIF)
-- ✅ Excluded directories with live preview
-- ✅ Extra features: Strip EXIF, Remove if larger
-- ✅ Expandable file tree with per-folder image counts
-- ✅ Nginx config generator
-- ✅ WP-CLI support
-- ✅ Clean admin UI under **Media → Image Optimizer**
+- Bulk conversion with a chunked background queue, plus auto-convert on upload (all thumbnail sizes)
+- WebP, AVIF, or both
+- **Test delivery** button that confirms the server really serves the converted file
+- Media Library column with before/after size and **Convert** / **Use original**
+- Files that fail or don't shrink are remembered, so bulk runs reach 100% and don't retry them forever
+- Converted copies are deleted with the original; replaced originals get reconverted
+- GD or Imagick, optional max dimensions, EXIF stripping, extra and excluded folders, file tree
+- WP-CLI: `wp image-converter bulk | status | revert --id=<id>`
 
 ## Requirements
 
-- WordPress 5.8+
-- PHP 7.4+
-- Apache with `mod_rewrite` enabled (for the redirect magic)
+- WordPress 5.8+, PHP 7.4+ (AVIF needs PHP 8.1+ with libavif, or Imagick with AVIF)
 - GD with WebP/AVIF support **or** Imagick
 
 ## Installation
 
-1. Clone or download this repo
-2. Upload the folder to `/wp-content/plugins/`
-3. Activate in **Plugins**
-4. Go to **Media → Image Optimizer** and configure
+1. Download the release zip (or copy the plugin files into `/wp-content/plugins/w-image-converter/`)
+2. Activate in **Plugins**
+3. Go to **Media → Image Converter**, run **Start Bulk Convert**, then **Test delivery** on the Delivery tab
 
 ## Changelog
+
+### v1.5.0
+- Renamed to W Image Converter (WordPress.org doesn't allow names starting with "WP")
+- Removed the backup option: originals were never modified, so backups only doubled disk usage. Old backup folders can be deleted from the bulk panel
+- HTML rewriting keeps responsive `srcset`/`sizes` and no longer nests `<picture>`
+- Skipped/failed files are remembered; progress reaches 100%
+- Converted copies deleted with the original; replaced originals reconverted
+- "Skip if larger" setting is respected
+- New: Test delivery, Delete converted files, Use original
+- Nginx snippet split into http {} and server {} parts (`map` isn't valid in `server`)
+- Removed GIF conversion (lost animation) and the unfinished remote server option
+- WP-CLI command renamed to `wp image-converter`
+- WordPress.org readme, uninstall cleanup, Plugin Check clean
 
 ### v1.4
 - **Changed:** converted files keep the original extension (`photo.jpg` → `photo.jpg.webp`). Previously `photo.jpg` and `photo.png` both mapped to `photo.webp`, and a native `photo.webp` upload was treated as the converted copy and served in place of `photo.jpg`. Files converted by v1.3 are left in place unused; run Bulk Convert again to regenerate them.
@@ -82,15 +84,8 @@ Instead of replacing image files, the plugin:
 
 ## Roadmap
 
-- [x] Nginx rewrite rule support
-- [x] Per-image conversion status in Media Library
-- [x] WP-CLI bulk conversion command
-- [x] Image backup/restore before conversion
-- [x] Conversion method selector (Imagick / GD / Auto)
-- [x] Excluded directories
-- [x] File tree with per-folder image counts
-- [ ] 🚧 Server-side image optimization *(coming soon)*
 - [ ] REST API endpoint for headless WordPress use
+- [ ] Optional lossless mode for PNG
 
 ## License
 

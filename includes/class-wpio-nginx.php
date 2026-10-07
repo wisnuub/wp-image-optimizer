@@ -2,7 +2,7 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * Generates Nginx rewrite rules for WebP/AVIF transparent serving.
+ * Generates Nginx rules for WebP/AVIF transparent serving.
  * Since Nginx doesn't use .htaccess, we output a config snippet
  * the admin can paste into their server block.
  */
@@ -14,8 +14,8 @@ class WPIO_Nginx {
      * @return bool
      */
     public static function is_nginx() {
-        return isset( $_SERVER['SERVER_SOFTWARE'] ) &&
-               stripos( $_SERVER['SERVER_SOFTWARE'], 'nginx' ) !== false;
+        $software = isset( $_SERVER['SERVER_SOFTWARE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['SERVER_SOFTWARE'] ) ) : '';
+        return stripos( $software, 'nginx' ) !== false;
     }
 
     /**
@@ -29,14 +29,12 @@ class WPIO_Nginx {
         $uploads_uri = wp_make_link_relative( $upload_dir['baseurl'] );
         $formats     = WPIO_Converter::get_formats( $format );
 
-        $output = "# -----------------------------------------------\n";
-        $output .= "# WP Image Optimizer - Nginx Config Snippet\n";
-        $output .= "# Paste this inside your server {} block\n";
-        $output .= "# -----------------------------------------------\n";
-
+        // map {} is only valid in the http {} context, so the snippet comes in two parts.
+        $output  = "# ===== W Image Converter - part 1 of 2 =====\n";
+        $output .= "# Paste in the http {} block (for example /etc/nginx/conf.d/w-image-converter.conf)\n";
         foreach ( $formats as $fmt ) {
             $mime    = $fmt === 'avif' ? 'image/avif' : 'image/webp';
-            $output .= "\nmap \$http_accept \$wpio_{$fmt}_suffix {\n";
+            $output .= "map \$http_accept \$wpio_{$fmt}_suffix {\n";
             $output .= "    default   \"\";\n";
             $output .= "    \"~*{$mime}\" \".{$fmt}\";\n";
             $output .= "}\n";
@@ -46,13 +44,14 @@ class WPIO_Nginx {
         // Converted files keep the original extension (photo.jpg.webp); suffix vars include the leading dot.
         $try_files = '';
         foreach ( array_reverse( $formats ) as $fmt ) {
-            $try_files .= "\$uri\$wpio_{$fmt}_suffix\n               ";
+            $try_files .= "\$uri\$wpio_{$fmt}_suffix ";
         }
 
-        $output .= "\nlocation ~* ^{$uploads_uri}/.+\\.(?:jpe?g|png)\$ {\n";
+        $output .= "\n# ===== W Image Converter - part 2 of 2 =====\n";
+        $output .= "# Paste in your site's server {} block\n";
+        $output .= "location ~* ^{$uploads_uri}/.+\\.(?:jpe?g|png)\$ {\n";
         $output .= "    add_header Vary Accept;\n";
-        $output .= "    try_files  {$try_files}\$uri\n";
-        $output .= "               =404;\n";
+        $output .= "    try_files {$try_files}\$uri =404;\n";
         $output .= "}\n";
 
         return $output;
@@ -65,6 +64,6 @@ class WPIO_Nginx {
      * @return string
      */
     public static function get_filename( $format = 'webp' ) {
-        return 'wpio-nginx-' . $format . '.conf';
+        return 'w-image-converter-nginx-' . $format . '.conf';
     }
 }
