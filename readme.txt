@@ -9,7 +9,7 @@ Stable tag: 1.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Convert JPG and PNG images to WebP or AVIF and serve them automatically — without changing image URLs or touching your originals.
+Convert JPG and PNG images to WebP or AVIF and serve them automatically, without changing image URLs or touching your originals.
 
 == Description ==
 
@@ -24,12 +24,12 @@ W Image Converter makes your images smaller by creating a WebP or AVIF copy of e
 = Features =
 
 * WebP, AVIF, or both (AVIF first, WebP as fallback)
-* Bulk conversion of your existing library, running in small chunks with a background queue — gentle on shared hosting
+* Bulk conversion of your existing library, running in small chunks with a background queue, gentle on shared hosting
 * Automatic conversion of new uploads, including every thumbnail size
 * Three delivery methods:
-  * **Server rewrite** — `.htaccess` rules on Apache/LiteSpeed, or a ready-to-paste Nginx config
-  * **HTML rewriting** — wraps images in `<picture>` elements; works on any host (WP Engine, Kinsta, behind a CDN). Responsive `srcset` and `sizes` are preserved, so phones still get small files.
-  * **None** — convert only, and serve the files your own way
+  * **Server rewrite:** `.htaccess` rules on Apache/LiteSpeed, or a ready-to-paste Nginx config
+  * **HTML rewriting:** wraps images in `<picture>` elements; works on any host (WP Engine, Kinsta, behind a CDN). Responsive `srcset` and `sizes` are preserved, so phones still get small files.
+  * **None:** convert only, and serve the files your own way
 * **Test delivery** button that checks your server really serves the converted files
 * Media Library column showing the format, size before and after, and one-click **Convert** / **Use original**
 * Optional maximum width and height, EXIF stripping, and GD or Imagick selection
